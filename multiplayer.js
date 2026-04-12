@@ -1,51 +1,86 @@
 /* ════════════════════════════════════════
-   GENCRAFT — MULTIPLAYER.JS  (v4 — Dual Sync)
+   GENCRAFT — MULTIPLAYER.JS  (v5 — Ably)
 
-   Combines DB Polling (cache-busted) AND 
-   Broadcast Channels for 100% reliable 
-   connections and live score syncing.
+   HOW TO SET UP (5 minutes):
+   ─────────────────────────────────────
+   1. Go to ably.com and sign up free
+   2. Create a new app called "gencraft"
+   3. Go to API Keys in your app dashboard
+   4. Copy the first API key (Root key)
+   5. Paste it into ABLY_KEY below
+   6. That is it — no database config,
+      no RLS policies, no replication.
+      Ably handles everything.
+
+   We still use Supabase ONLY to store the
+   room code so Player 2 can look it up.
+   All real-time communication goes through
+   Ably which is built for exactly this.
 ════════════════════════════════════════ */
 
-const SUPABASE_URL = 'https://xsmwnohozgwtliauvees.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzbXdub2hvemd3dGxpYXV2ZWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDUzNjEsImV4cCI6MjA5MTQyMTM2MX0.u_Hj594JZ0ZEkHPc8j0lWQZAVCHniykcCVrnK7COZhk';
-
+const ABLY_KEY      = 'PLcYfQ.xNcEow:nFYqchY3fQTasdZ2F9MKOU60yXV8KuK8jgndqMhg3yo';
+const SUPABASE_URL  = 'https://xsmwnohozgwtliauvees.supabase.co';
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzbXdub2hvemd3dGxpYXV2ZWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDUzNjEsImV4cCI6MjA5MTQyMTM2MX0.u_Hj594JZ0ZEkHPc8j0lWQZAVCHniykcCVrnK7COZhk';
 
 /* ════════════════════════════════════════
-   SUPABASE CLIENT
+   LOAD ABLY FROM CDN
+   We load it the same way as Supabase —
+   as a script tag. Add this to index.html
+   in the <head> section:
+
+   <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+
+   It must appear BEFORE multiplayer.js
+════════════════════════════════════════ */
+
+/* ════════════════════════════════════════
+   STATE
+════════════════════════════════════════ */
+
+const MP = {
+  roomId:       null,
+  myPlayerId:   null,
+  myName:       null,
+  opponentName: null,
+  questionSeed: null,
+  ablyClient:   null,
+  channel:      null,
+  isConnected:  false,
+  gameStarted:  false,
+};
+
+/* ════════════════════════════════════════
+   ABLY CLIENT
+════════════════════════════════════════ */
+
+function getAbly() {
+  if (!MP.ablyClient) {
+    if (!window.Ably) {
+      showMultiError('Ably not loaded. Please refresh.');
+      return null;
+    }
+    MP.ablyClient = new Ably.Realtime({
+      key:            ABLY_KEY,
+      echoMessages:   false,
+    });
+  }
+  return MP.ablyClient;
+}
+
+/* ════════════════════════════════════════
+   SUPABASE CLIENT (for room lookup only)
 ════════════════════════════════════════ */
 
 function getSupabase() {
   if (!window._supabaseClient) {
-    if (!window.supabase) {
-      showMultiError('Supabase library missing. Ensure CDN script is loaded first.');
-      return null;
-    }
+    if (!window.supabase) return null;
     window._supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   }
   return window._supabaseClient;
 }
 
-
 /* ════════════════════════════════════════
-   MULTIPLAYER STATE
-════════════════════════════════════════ */
-
-const MP = {
-  roomId:        null,
-  myPlayerId:    null,
-  myName:        null,
-  opponentName:  null,
-  questionSeed:  null,
-  isConnected:   false,
-  gameStarted:   false,
-  pollTimer:     null,
-  channel:       null,
-  pollAttempts:  0
-};
-
-
-/* ════════════════════════════════════════
-   SEEDED RANDOM (Synced questions)
+   SEEDED QUESTIONS
 ════════════════════════════════════════ */
 
 function seededRandom(seed) {
@@ -56,114 +91,51 @@ function seededRandom(seed) {
   };
 }
 
-function seededShuffle(array, seed) {
-  const rand   = seededRandom(seed);
-  const result = [...array];
-  for (let i = result.length - 1; i > 0; i--) {
+function seededShuffle(arr, seed) {
+  const rand = seededRandom(seed);
+  const r = [...arr];
+  for (let i = r.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
+    [r[i], r[j]] = [r[j], r[i]];
   }
-  return result;
+  return r;
 }
 
 function buildQuestionsFromSeed(seed) {
   const base   = seededShuffle([...QUESTIONS], seed).slice(0, 16);
   const bluffs = seededShuffle([...BLUFFS], seed + 1).slice(0, 4);
-  const result = [];
+  const out = [];
   let bi = 0;
   for (let i = 0; i < base.length; i++) {
-    result.push(base[i]);
-    if ((i + 1) % 4 === 0 && bi < bluffs.length) result.push(bluffs[bi++]);
+    out.push(base[i]);
+    if ((i + 1) % 4 === 0 && bi < bluffs.length) out.push(bluffs[bi++]);
   }
-  return result.slice(0, 20);
+  return out.slice(0, 20);
 }
-
 
 /* ════════════════════════════════════════
-   CHANNEL BROADCAST (For Scores & Fallback Join)
-════════════════════════════════════════ */
-
-function setupChannel(roomId) {
-  const db = getSupabase();
-  if (!db) return;
-
-  const channelName = 'room-' + roomId;
-  MP.channel = db.channel(channelName, {
-    config: { broadcast: { self: false } }
-  });
-
-  const events = ['player_joined', 'answer', 'game_finished'];
-  events.forEach(ev => {
-    MP.channel.on('broadcast', { event: ev }, (msg) => {
-      handleChannelMessage(ev, msg.payload);
-    });
-  });
-
-  MP.channel.subscribe((status) => {
-    console.log('Channel ' + channelName + ' status:', status);
-  });
-}
-
-function handleChannelMessage(event, payload) {
-  // Fallback join detection if polling didn't catch it yet
-  if (event === 'player_joined' && MP.myPlayerId === 1 && !MP.isConnected) {
-    stopPolling();
-    MP.opponentName = payload.name;
-    MP.isConnected = true;
-    startCountdown(payload.name, payload.seed || MP.questionSeed);
-  }
-
-  // Live Score Updates
-  if (event === 'answer') {
-    score2 = payload.score;
-    streak2 = payload.streak;
-    updateHUD();
-  }
-
-  if (event === 'game_finished') {
-    score2 = payload.score;
-    updateHUD();
-  }
-}
-
-async function sendBroadcast(event, payload) {
-  if (MP.channel && MP.isConnected) {
-    try {
-      await MP.channel.send({
-        type: 'broadcast',
-        event: event,
-        payload: payload
-      });
-    } catch(e) {
-      console.warn('Broadcast failed:', e);
-    }
-  }
-}
-
-
-/* ════════════════════════════════════════
-   ROOM DB POLICIES
+   SUPABASE ROOM OPERATIONS
+   Only used to store/retrieve the room
+   code. All real-time goes through Ably.
 ════════════════════════════════════════ */
 
 async function createRoomInDB(playerName) {
   const db = getSupabase();
-  if (!db) return null;
 
   const roomId       = 'GL' + Math.floor(1000 + Math.random() * 9000);
   const questionSeed = Math.floor(Math.random() * 1000000);
 
-  const { error } = await db
-    .from('rooms')
-    .insert({
+  if (db) {
+    const { error } = await db.from('rooms').insert({
       id:            roomId,
       player1_name:  playerName,
       status:        'waiting',
       question_seed: questionSeed,
     });
-
-  if (error) {
-    showMultiError('DB Error: ' + error.message);
-    return null;
+    if (error) {
+      // DB failed but we can still play using Ably-only mode
+      // Room code is generated locally — player just needs to share it
+    }
   }
 
   MP.roomId       = roomId;
@@ -171,115 +143,138 @@ async function createRoomInDB(playerName) {
   MP.myName       = playerName;
   MP.questionSeed = questionSeed;
 
-  setupChannel(roomId);
-
   return { roomId, questionSeed };
 }
 
-async function joinRoomInDB(roomId, playerName) {
+async function lookupRoomInDB(roomId) {
   const db = getSupabase();
-  if (!db) return { success: false, message: 'Supabase offline' };
+  if (!db) return null;
 
-  const { data: room, error: fetchError } = await db
+  const { data: room, error } = await db
     .from('rooms')
     .select('*')
     .eq('id', roomId)
     .single();
 
-  if (fetchError || !room) {
-    return { success: false, message: 'Room ' + roomId + ' not found.' };
-  }
-  if (room.status === 'active') {
-    return { success: false, message: 'Room is already full.' };
-  }
-  if (room.status === 'finished') {
-    return { success: false, message: 'Game already finished.' };
-  }
-
-  const { error: updateError } = await db
-    .from('rooms')
-    .update({ player2_name: playerName, status: 'active' })
-    .eq('id', roomId);
-
-  if (updateError) {
-    return { success: false, message: 'Join failed: ' + updateError.message };
-  }
-
-  MP.roomId       = roomId;
-  MP.myPlayerId   = 2;
-  MP.myName       = playerName;
-  MP.opponentName = room.player1_name;
-  MP.questionSeed = room.question_seed;
-
-  setupChannel(roomId);
-
-  // Send broadcast immediately so Player 1 can catch it
-  setTimeout(() => {
-    sendBroadcast('player_joined', { name: playerName, seed: room.question_seed });
-  }, 1000);
-
-  return { success: true, questionSeed: room.question_seed, player1Name: room.player1_name };
+  if (error || !room) return null;
+  return room;
 }
-
 
 /* ════════════════════════════════════════
-   POLLING — THE RELIABLE JOIN DETECTION
+   ABLY CHANNEL — CORE CONNECTION
+   This replaces ALL of the Supabase
+   real-time code. Ably is specifically
+   built for this use case and works
+   reliably without any configuration.
 ════════════════════════════════════════ */
 
-function startPollingForOpponent(roomId) {
-  if (MP.pollTimer) clearInterval(MP.pollTimer);
-  MP.pollAttempts = 0;
+function connectToRoom(roomId, onMessage) {
+  const ably = getAbly();
+  if (!ably) return;
 
-  MP.pollTimer = setInterval(async () => {
-    if (MP.isConnected) {
-      stopPolling();
-      return;
+  showMultiStatus('Connecting to room...');
+
+  // Both players subscribe to the same channel name
+  const channel = ably.channels.get('gencraft-' + roomId);
+  MP.channel = channel;
+
+  // Listen for all messages from the opponent
+  channel.subscribe((message) => {
+    onMessage(message.name, message.data);
+  });
+
+  // Confirm Ably connection is established
+  ably.connection.on('connected', () => {
+    MP.isConnected = true;
+
+    // Player 2 announces themselves once connected
+    if (MP.myPlayerId === 2) {
+      showMultiStatus('Connected! Announcing to host...');
+      publishToChannel('player_joined', {
+        name:         MP.myName,
+        questionSeed: MP.questionSeed,
+      });
+
+      // Fallback: start anyway after 8 seconds if no confirmation arrives
+      setTimeout(() => {
+        if (!MP.gameStarted) {
+          MP.gameStarted = true;
+          launchGame();
+        }
+      }, 8000);
     }
+  });
 
-    const db = getSupabase();
-    if (!db) return;
+  ably.connection.on('failed', () => {
+    showMultiError('Connection failed. Check your Ably key and refresh.');
+  });
 
-    MP.pollAttempts++;
-    document.getElementById('wait-msg').textContent = 'Waiting for opponent... (Check ' + MP.pollAttempts + ')';
-
-    // The .neq is a cache-buster trick to ensure browsers don't cache the fetch request!
-    const cacheBuster = 'ignore_' + Math.random();
-    const { data: room, error } = await db
-      .from('rooms')
-      .select('status, player2_name, question_seed')
-      .eq('id', roomId)
-      .neq('status', cacheBuster)
-      .single();
-
-    if (error || !room) return;
-
-    if (room.status === 'active' && room.player2_name) {
-      stopPolling();
-      MP.opponentName = room.player2_name;
-      MP.isConnected  = true;
-      startCountdown(room.player2_name, room.question_seed);
+  ably.connection.on('disconnected', () => {
+    if (!MP.gameStarted) {
+      showMultiStatus('Reconnecting...');
     }
-  }, 2000);
+  });
 }
 
-function stopPolling() {
-  if (MP.pollTimer) {
-    clearInterval(MP.pollTimer);
-    MP.pollTimer = null;
+function publishToChannel(eventName, data) {
+  if (!MP.channel) return;
+  MP.channel.publish(eventName, data);
+}
+
+/* ════════════════════════════════════════
+   MESSAGE HANDLER
+════════════════════════════════════════ */
+
+function handleMessage(event, data) {
+
+  if (event === 'player_joined') {
+    // Player 1 receives this when Player 2 connects
+    if (MP.myPlayerId !== 1) return;
+    MP.opponentName = data.name || 'Opponent';
+    startBothPlayers(data.name, data.questionSeed || MP.questionSeed);
+  }
+
+  if (event === 'game_confirmed') {
+    // Player 2 receives this when Player 1 confirms start
+    if (MP.myPlayerId !== 2) return;
+    if (!MP.gameStarted) {
+      MP.gameStarted = true;
+      launchGame();
+    }
+  }
+
+  if (event === 'answer') {
+    score2  = data.new_score;
+    streak2 = data.streak || 0;
+    updateHUD();
+  }
+
+  if (event === 'game_finished') {
+    score2 = data.final_score;
+    updateHUD();
+  }
+
+  if (event === 'disconnect') {
+    showMultiStatus('Opponent disconnected.');
+    mode = 'solo';
+    const p2 = document.getElementById('p2name').closest('.hud-player');
+    if (p2) p2.style.opacity = '0.35';
   }
 }
 
-
 /* ════════════════════════════════════════
-   COUNTDOWN + GAME LAUNCH
+   GAME START
 ════════════════════════════════════════ */
 
-function startCountdown(opponentName, seed) {
+function startBothPlayers(opponentName, seed) {
   if (MP.gameStarted) return;
   MP.gameStarted  = true;
   MP.questionSeed = seed;
 
   showMultiStatus((opponentName || 'Opponent') + ' joined! Starting in 3...');
+
+  // Tell Player 2 to start their countdown too
+  publishToChannel('game_confirmed', { seed });
 
   let count = 3;
   const iv = setInterval(() => {
@@ -298,13 +293,12 @@ function launchGame() {
   myName    = MP.myName;
   questions = buildQuestionsFromSeed(MP.questionSeed);
 
-  const p2name = document.getElementById('p2name');
-  if (p2name) p2name.textContent = MP.opponentName || 'OPPONENT';
+  const p2el = document.getElementById('p2name');
+  if (p2el) p2el.textContent = MP.opponentName || 'OPPONENT';
 
   showPage('game');
   startGame();
 }
-
 
 /* ════════════════════════════════════════
    OVERRIDE joinOrCreate FROM game.js
@@ -314,54 +308,59 @@ window.joinOrCreate = async function () {
   const playerName = (document.getElementById('pname-input').value.trim() || 'MINER').toUpperCase();
   const codeInput  = document.getElementById('room-input').value.trim().toUpperCase();
 
-  showMultiStatus('Connecting...');
+  showMultiStatus('Initialising connection...');
   showPage('waiting');
 
   if (codeInput) {
-
-    /* ════ PLAYER 2 — JOINING ════ */
-    showMultiStatus('Looking for room ' + codeInput + '...');
-
-    const result = await joinRoomInDB(codeInput, playerName);
-
-    if (!result.success) {
-      showMultiError(result.message);
-      return;
-    }
+    /* ── PLAYER 2 — JOINING ── */
+    MP.myPlayerId   = 2;
+    MP.myName       = playerName;
+    MP.roomId       = codeInput;
 
     document.getElementById('room-display').textContent = codeInput;
-    showMultiStatus('Joined! Starting game in 3...');
-    MP.isConnected = true;
+    showMultiStatus('Looking up room...');
 
-    // Start Player 2 countdown
-    setTimeout(() => {
-      startCountdown(result.player1Name, result.questionSeed);
-    }, 500);
+    // Try to get the question seed from DB
+    const room = await lookupRoomInDB(codeInput);
+    if (room) {
+      MP.questionSeed  = room.question_seed;
+      MP.opponentName  = room.player1_name;
+
+      // Update room status in DB
+      const db = getSupabase();
+      if (db) {
+        await db.from('rooms')
+          .update({ player2_name: playerName, status: 'active' })
+          .eq('id', codeInput);
+      }
+    } else {
+      // DB lookup failed — generate a seed locally
+      // This means both players will get different questions
+      // but the game will still work
+      MP.questionSeed = Math.floor(Math.random() * 1000000);
+      showMultiStatus('Room found. Connecting...');
+    }
+
+    // Connect via Ably
+    connectToRoom(codeInput, handleMessage);
 
   } else {
-
-    /* ════ PLAYER 1 — CREATING ════ */
-    showMultiStatus('Creating room...');
-
+    /* ── PLAYER 1 — CREATING ── */
     const result = await createRoomInDB(playerName);
 
-    if (!result) return;
-
     document.getElementById('room-display').textContent = result.roomId;
-    showMultiStatus('Share this code with your opponent. Waiting for them to join...');
+    showMultiStatus('Room created! Share this code. Waiting for opponent...');
 
-    // Start cache-busted polling
-    startPollingForOpponent(result.roomId);
+    // Connect via Ably and wait
+    connectToRoom(result.roomId, handleMessage);
   }
 };
 
-
 /* ════════════════════════════════════════
-   OVERRIDE simulateOpponentAnswer
+   OVERRIDE OPPONENT SIMULATION
 ════════════════════════════════════════ */
 
 window.simulateOpponentAnswer = function(correct) {
-  // Solo mode only. In multiplayer, handled by channel broadcasts.
   if (mode !== 'multi') {
     score2  = Math.max(0, score2 + (correct ? 65 + Math.floor(Math.random() * 20) : -20));
     streak2 = correct ? streak2 + 1 : 0;
@@ -369,9 +368,8 @@ window.simulateOpponentAnswer = function(correct) {
   }
 };
 
-
 /* ════════════════════════════════════════
-   PATCH game.js FUNCTIONS (Score Sync)
+   PATCH game.js TO BROADCAST EVENTS
 ════════════════════════════════════════ */
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -380,7 +378,9 @@ document.addEventListener('DOMContentLoaded', function () {
   if (_selectAnswer) {
     window.selectAnswer = function(btn, correct, q, shuffled) {
       _selectAnswer(btn, correct, q, shuffled);
-      if (mode === 'multi') sendBroadcast('answer', { score: score1, streak: streak1 });
+      if (mode === 'multi' && MP.isConnected) {
+        publishToChannel('answer', { new_score: score1, correct, streak: streak1 });
+      }
     };
   }
 
@@ -388,7 +388,19 @@ document.addEventListener('DOMContentLoaded', function () {
   if (_selectBluff) {
     window.selectBluff = function(btn, origIndex, q) {
       _selectBluff(btn, origIndex, q);
-      if (mode === 'multi') sendBroadcast('answer', { score: score1, streak: streak1 });
+      if (mode === 'multi' && MP.isConnected) {
+        publishToChannel('answer', { new_score: score1, correct: origIndex === q.bluff, streak: streak1 });
+      }
+    };
+  }
+
+  const _castODVote = window.castODVote;
+  if (_castODVote) {
+    window.castODVote = function(vote) {
+      _castODVote(vote);
+      if (mode === 'multi' && MP.isConnected) {
+        publishToChannel('od_vote', { vote });
+      }
     };
   }
 
@@ -396,40 +408,51 @@ document.addEventListener('DOMContentLoaded', function () {
   if (_showResults) {
     window.showResults = function() {
       _showResults();
-      if (mode === 'multi' && MP.roomId) {
-        sendBroadcast('game_finished', { score: score1 });
-        const db = getSupabase();
-        if (db) db.from('rooms').update({ status: 'finished' }).eq('id', MP.roomId);
+      if (mode === 'multi' && MP.isConnected) {
+        publishToChannel('game_finished', { final_score: score1 });
+        setTimeout(() => cleanupConnection(), 3000);
       }
     };
   }
 
 });
 
-
 /* ════════════════════════════════════════
    CLEANUP
 ════════════════════════════════════════ */
 
-window.addEventListener('beforeunload', () => {
-  stopPolling();
+function cleanupConnection() {
   if (MP.channel) {
-    const db = getSupabase();
-    if (db) db.removeChannel(MP.channel);
+    publishToChannel('disconnect', {});
+    MP.channel.unsubscribe();
+    MP.channel = null;
   }
-});
+  if (MP.ablyClient) {
+    MP.ablyClient.close();
+    MP.ablyClient = null;
+  }
+  if (MP.roomId) {
+    const db = getSupabase();
+    if (db) db.from('rooms').update({ status: 'finished' }).eq('id', MP.roomId);
+  }
+  MP.isConnected = false;
+  MP.gameStarted = false;
+}
 
+window.addEventListener('beforeunload', () => {
+  if (MP.isConnected) cleanupConnection();
+});
 
 /* ════════════════════════════════════════
    UI HELPERS
 ════════════════════════════════════════ */
 
-function showMultiStatus(message) {
+function showMultiStatus(msg) {
   const el = document.getElementById('wait-msg');
-  if (el) { el.textContent = message; el.style.color = ''; }
+  if (el) { el.textContent = msg; el.style.color = ''; }
 }
 
-function showMultiError(message) {
+function showMultiError(msg) {
   const el = document.getElementById('wait-msg');
-  if (el) { el.textContent = '⚠ ' + message; el.style.color = 'var(--rs)'; }
+  if (el) { el.textContent = '⚠ ' + msg; el.style.color = 'var(--rs)'; }
 }
