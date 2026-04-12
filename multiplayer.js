@@ -151,7 +151,7 @@ async function joinRoom(roomId, playerName) {
     .from('rooms')
     .select('*')
     .eq('id', roomId)
-    .single();
+    .maybeSingle();
 
   if (fetchError || !room) {
     console.error('[MP] Room fetch error:', fetchError);
@@ -362,7 +362,7 @@ window.joinOrCreate = async function () {
   const nameInput  = document.getElementById('pname-input');
   const codeInput  = document.getElementById('room-input');
   const playerName = (nameInput.value.trim() || 'MINER').toUpperCase();
-  const roomCode   = codeInput.value.trim().toUpperCase();
+  const roomCode   = codeInput.value.replace(/\s/g, '').toUpperCase();
 
   // *** FIX: Set mode to multi here — this was NEVER done before ***
   mode = 'multi';
