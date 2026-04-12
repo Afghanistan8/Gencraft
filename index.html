@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
 </head>
 <body>
 
@@ -68,7 +66,7 @@
     </div>
     <div class="hbar-sep"></div>
     <div class="hslot" title="Games played">
-      <span class="hs-icon">⚔</span>
+      <span class="hs-icon">⚔️</span>
       <span class="hs-count" id="hs-gp">0</span>
       <span class="hs-label">GAMES</span>
     </div>
@@ -78,7 +76,7 @@
       <span class="hs-label">BEST</span>
     </div>
     <div class="hslot" title="Rank">
-      <span class="hs-icon">⛏</span>
+      <span class="hs-icon">⛏️</span>
       <span class="hs-count" id="hs-rk">—</span>
       <span class="hs-label">RANK</span>
     </div>
@@ -105,8 +103,8 @@
         <span class="tag go">STREAK BONUS</span>
       </div>
       <div class="splash-btns">
-        <button class="btn em" onclick="initSolo()">⛏ SOLO MINE</button>
-        <button class="btn am" onclick="initMulti()">⚔ MULTIPLAYER FORGE</button>
+        <button class="btn em" onclick="initSolo()">⛏️ SOLO MINE</button>
+        <button class="btn am" onclick="initMulti()">⚔️ MULTIPLAYER FORGE</button>
         <div class="splash-divider"><span>OR</span></div>
         <button class="btn ghost" onclick="showPage('how-to-play')">📖 HOW TO PLAY</button>
         <button class="btn ghost" onclick="showPage('leaderboard')">🏆 LEADERBOARD</button>
@@ -217,10 +215,10 @@
 
     <div class="section-hd">VALIDATOR RANKS</div>
     <div class="scoring-table">
-      <div class="score-row"><span class="sr-action">0 – 200 XP</span><span class="sr-xp" style="color:var(--txt3)">⛏ NODE LEARNER</span></div>
+      <div class="score-row"><span class="sr-action">0 – 200 XP</span><span class="sr-xp" style="color:var(--txt3)">⛏️ NODE LEARNER</span></div>
       <div class="score-row"><span class="sr-action">200 – 400 XP</span><span class="sr-xp" style="color:var(--di)">◆ JUNIOR VALIDATOR</span></div>
       <div class="score-row"><span class="sr-action">400 – 650 XP</span><span class="sr-xp" style="color:var(--em)">◈ SENIOR VALIDATOR</span></div>
-      <div class="score-row"><span class="sr-action">650 – 900 XP</span><span class="sr-xp" style="color:var(--am)">⚡ CONSENSUS MASTER</span></div>
+      <div class="score-row"><span class="sr-action">650 – 900 XP</span><span class="sr-xp" style="color:var(--am)">⚡️ CONSENSUS MASTER</span></div>
       <div class="score-row"><span class="sr-action">900+ XP</span><span class="sr-xp" style="color:var(--go)">🏆 OPTIMISTIC ORACLE</span></div>
     </div>
 
@@ -290,7 +288,7 @@
     <div class="section-hd">ACHIEVEMENTS</div>
     <div class="achievements-list">
       <div class="achievement unlocked">
-        <div class="achievement-icon">⛏</div>
+        <div class="achievement-icon">⛏️</div>
         <div class="ach-info"><div class="ach-name" style="color:var(--em)">FIRST MINE</div><div class="ach-desc">Complete your first game</div></div>
         <div class="ach-xp">+10 XP</div>
       </div>
@@ -305,7 +303,7 @@
         <div class="ach-xp">+30 XP</div>
       </div>
       <div class="achievement locked" id="ach-od">
-        <div class="achievement-icon">⚡</div>
+        <div class="achievement-icon">⚡️</div>
         <div class="ach-info"><div class="ach-name">CONSENSUS REACHED</div><div class="ach-desc">Win 3 OD finale votes</div></div>
         <div class="ach-xp">+50 XP</div>
       </div>
@@ -457,7 +455,7 @@
         <div style="font-family:var(--px);font-size:6px;color:var(--txt3);letter-spacing:.1em;margin-bottom:8px">AI VALIDATORS DELIBERATING</div>
         <div class="vrow" id="od-vrow"></div>
         <div class="split-notice" id="split-notice">
-          ⚡ 3–2 SPLIT — Mirrors GenLayer's real Optimistic Democracy. Appeal window is now open.
+          ⚡️ 3–2 SPLIT — Mirrors GenLayer's real Optimistic Democracy. Appeal window is now open.
         </div>
         <div class="appeal-box" id="appeal-box">
           <p>Split detected. Invoke an <strong style="color:var(--di)">APPEAL</strong> to expand the validator set 5 → 10, exactly as GenLayer's real mechanism works. Cost: <strong style="color:var(--rs)">−20 XP</strong>.</p>
@@ -509,7 +507,11 @@
 
 </div><!-- end #app -->
 
-<script src="multiplayer.js"></script>
+<!-- 1. Supabase SDK — must load synchronously before anything else -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<!-- 2. Game logic first — so all functions exist when multiplayer.js patches them -->
 <script src="game.js"></script>
+<!-- 3. Multiplayer last — it overrides joinOrCreate and patches game functions -->
+<script src="multiplayer.js"></script>
 </body>
 </html>

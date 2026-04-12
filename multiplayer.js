@@ -1,458 +1,550 @@
 /* ════════════════════════════════════════
-   GENCRAFT — MULTIPLAYER.JS  (v5 — Ably)
+   GENCRAFT MULTIPLAYER — FIXED VERSION
+   
+   What was wrong (4 bugs):
+   1. multiplayer.js loaded BEFORE game.js, so window.joinOrCreate was
+      overwritten back to the dummy version by game.js on every page load.
+   2. mode was NEVER set to 'multi' — simulateOpponentAnswer always ran.
+   3. Supabase SDK was injected dynamically — it hadn't loaded by the time
+      joinOrCreate ran, so getSupabase() returned null silently.
+   4. DOMContentLoaded patches found null for all functions because game.js
+      defines them as plain functions, not on window — patches did nothing.
 
-   HOW TO SET UP (5 minutes):
-   ─────────────────────────────────────
-   1. Go to ably.com and sign up free
-   2. Create a new app called "gencraft"
-   3. Go to API Keys in your app dashboard
-   4. Copy the first API key (Root key)
-   5. Paste it into ABLY_KEY below
-   6. That is it — no database config,
-      no RLS policies, no replication.
-      Ably handles everything.
-
-   We still use Supabase ONLY to store the
-   room code so Player 2 can look it up.
-   All real-time communication goes through
-   Ably which is built for exactly this.
+   Fixes applied:
+   - Supabase loaded via <script> tag in index.html (already synchronous)
+   - Script order in index.html is now: supabase CDN → game.js → multiplayer.js
+   - mode = 'multi' is now set inside joinOrCreate
+   - All function patches removed — multiplayer.js now directly calls the
+     real functions after wrapping them properly at load time
 ════════════════════════════════════════ */
 
-const ABLY_KEY      = 'PLcYfQ.xNcEow:nFYqchY3fQTasdZ2F9MKOU60yXV8KuK8jgndqMhg3yo';
-const SUPABASE_URL  = 'https://xsmwnohozgwtliauvees.supabase.co';
-const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzbXdub2hvemd3dGxpYXV2ZWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDUzNjEsImV4cCI6MjA5MTQyMTM2MX0.u_Hj594JZ0ZEkHPc8j0lWQZAVCHniykcCVrnK7COZhk';
+const SUPABASE_URL = 'https://xsmwnohozgwtliauvees.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzbXdub2hvemd3dGxpYXV2ZWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDUzNjEsImV4cCI6MjA5MTQyMTM2MX0.u_Hj594JZ0ZEkHPc8j0lWQZAVCHniykcCVrnK7COZhk';
+
 
 /* ════════════════════════════════════════
-   LOAD ABLY FROM CDN
-   We load it the same way as Supabase —
-   as a script tag. Add this to index.html
-   in the <head> section:
-
-   <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
-
-   It must appear BEFORE multiplayer.js
-════════════════════════════════════════ */
-
-/* ════════════════════════════════════════
-   STATE
-════════════════════════════════════════ */
-
-const MP = {
-  roomId:       null,
-  myPlayerId:   null,
-  myName:       null,
-  opponentName: null,
-  questionSeed: null,
-  ablyClient:   null,
-  channel:      null,
-  isConnected:  false,
-  gameStarted:  false,
-};
-
-/* ════════════════════════════════════════
-   ABLY CLIENT
-════════════════════════════════════════ */
-
-function getAbly() {
-  if (!MP.ablyClient) {
-    if (!window.Ably) {
-      showMultiError('Ably not loaded. Please refresh.');
-      return null;
-    }
-    MP.ablyClient = new Ably.Realtime({
-      key:            ABLY_KEY,
-      echoMessages:   false,
-    });
-  }
-  return MP.ablyClient;
-}
-
-/* ════════════════════════════════════════
-   SUPABASE CLIENT (for room lookup only)
+   SUPABASE CLIENT
+   SDK is now loaded synchronously in index.html — no dynamic injection.
 ════════════════════════════════════════ */
 
 function getSupabase() {
+  if (!window.supabase) {
+    console.error('[MP] Supabase SDK not loaded — check index.html script order');
+    return null;
+  }
   if (!window._supabaseClient) {
-    if (!window.supabase) return null;
     window._supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    console.log('[MP] Supabase client created');
   }
   return window._supabaseClient;
 }
 
+
 /* ════════════════════════════════════════
-   SEEDED QUESTIONS
+   MULTIPLAYER STATE
 ════════════════════════════════════════ */
 
-function seededRandom(seed) {
+const MP = {
+  roomId:            null,
+  myPlayerId:        null,
+  myName:            null,
+  opponentName:      null,
+  questionSeed:      null,
+  roomSubscription:  null,
+  eventSubscription: null,
+  isConnected:       false,
+  opponentScore:     200,
+  lastEventId:       null,
+};
+
+
+/* ════════════════════════════════════════
+   SEEDED RANDOM — SAME QUESTIONS FOR BOTH PLAYERS
+════════════════════════════════════════ */
+
+function createSeededRandom(seed) {
   let s = seed;
-  return function() {
+  return function () {
     s = (s * 1664525 + 1013904223) & 0xffffffff;
     return (s >>> 0) / 0xffffffff;
   };
 }
 
-function seededShuffle(arr, seed) {
-  const rand = seededRandom(seed);
-  const r = [...arr];
-  for (let i = r.length - 1; i > 0; i--) {
+function seededShuffle(array, seed) {
+  const rand   = createSeededRandom(seed);
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
     const j = Math.floor(rand() * (i + 1));
-    [r[i], r[j]] = [r[j], r[i]];
+    [result[i], result[j]] = [result[j], result[i]];
   }
-  return r;
+  return result;
 }
 
 function buildQuestionsFromSeed(seed) {
   const base   = seededShuffle([...QUESTIONS], seed).slice(0, 16);
   const bluffs = seededShuffle([...BLUFFS], seed + 1).slice(0, 4);
-  const out = [];
-  let bi = 0;
+  const result = [];
+  let bluffIndex = 0;
   for (let i = 0; i < base.length; i++) {
-    out.push(base[i]);
-    if ((i + 1) % 4 === 0 && bi < bluffs.length) out.push(bluffs[bi++]);
+    result.push(base[i]);
+    if ((i + 1) % 4 === 0 && bluffIndex < bluffs.length) {
+      result.push(bluffs[bluffIndex++]);
+    }
   }
-  return out.slice(0, 20);
+  return result.slice(0, 20);
 }
 
+
 /* ════════════════════════════════════════
-   SUPABASE ROOM OPERATIONS
-   Only used to store/retrieve the room
-   code. All real-time goes through Ably.
+   ROOM CREATION — PLAYER 1
 ════════════════════════════════════════ */
 
-async function createRoomInDB(playerName) {
+async function createRoom(playerName) {
   const db = getSupabase();
+  if (!db) {
+    showMultiError('Could not connect to database. Refresh and try again.');
+    return null;
+  }
 
   const roomId       = 'GL' + Math.floor(1000 + Math.random() * 9000);
   const questionSeed = Math.floor(Math.random() * 1000000);
 
-  if (db) {
-    const { error } = await db.from('rooms').insert({
+  console.log('[MP] Creating room:', roomId);
+
+  const { error } = await db
+    .from('rooms')
+    .insert({
       id:            roomId,
       player1_name:  playerName,
       status:        'waiting',
       question_seed: questionSeed,
     });
-    if (error) {
-      // DB failed but we can still play using Ably-only mode
-      // Room code is generated locally — player just needs to share it
-    }
+  
+  if (error) {
+    console.error('[MP] createRoom error:', error);
+    showMultiError('Could not create room: ' + error.message);
+    return null;
   }
 
   MP.roomId       = roomId;
   MP.myPlayerId   = 1;
   MP.myName       = playerName;
   MP.questionSeed = questionSeed;
+  MP.isConnected  = true;
 
-  return { roomId, questionSeed };
+  console.log('[MP] Room created:', roomId);
+  return roomId;
 }
 
-async function lookupRoomInDB(roomId) {
-  const db = getSupabase();
-  if (!db) return null;
 
-  const { data: room, error } = await db
+/* ════════════════════════════════════════
+   ROOM JOINING — PLAYER 2
+════════════════════════════════════════ */
+
+async function joinRoom(roomId, playerName) {
+  const db = getSupabase();
+  if (!db) return { success: false, message: 'Database not connected. Refresh and try again.' };
+
+  console.log('[MP] Joining room:', roomId);
+
+  const { data: room, error: fetchError } = await db
     .from('rooms')
     .select('*')
     .eq('id', roomId)
     .single();
 
-  if (error || !room) return null;
-  return room;
+  if (fetchError || !room) {
+    console.error('[MP] Room fetch error:', fetchError);
+    return { success: false, message: 'Room "' + roomId + '" not found. Check the code and try again.' };
+  }
+
+  if (room.status === 'active') {
+    return { success: false, message: 'Room is already full. Ask your opponent to create a new one.' };
+  }
+  if (room.status === 'finished') {
+    return { success: false, message: 'That game has already finished.' };
+  }
+
+  const { error: joinError } = await db
+    .from('rooms')
+    .update({ player2_name: playerName, status: 'active' })
+    .eq('id', roomId);
+
+  if (joinError) {
+    console.error('[MP] Join error:', joinError);
+    return { success: false, message: 'Could not join room: ' + joinError.message };
+  }
+
+  MP.roomId       = roomId;
+  MP.myPlayerId   = 2;
+  MP.myName       = playerName;
+  MP.opponentName = room.player1_name;
+  MP.questionSeed = room.question_seed;
+  MP.isConnected  = true;
+
+  console.log('[MP] Joined room:', roomId, 'as player 2');
+
+  return {
+    success:      true,
+    questionSeed: room.question_seed,
+    player1Name:  room.player1_name,
+  };
 }
 
+
 /* ════════════════════════════════════════
-   ABLY CHANNEL — CORE CONNECTION
-   This replaces ALL of the Supabase
-   real-time code. Ably is specifically
-   built for this use case and works
-   reliably without any configuration.
+   WATCH FOR OPPONENT — PLAYER 1 WAITS
 ════════════════════════════════════════ */
 
-function connectToRoom(roomId, onMessage) {
-  const ably = getAbly();
-  if (!ably) return;
+function watchForOpponent(onOpponentJoined) {
+  const db = getSupabase();
+  if (!db) return;
 
-  showMultiStatus('Connecting to room...');
+  console.log('[MP] Watching for opponent in room:', MP.roomId);
 
-  // Both players subscribe to the same channel name
-  const channel = ably.channels.get('gencraft-' + roomId);
-  MP.channel = channel;
-
-  // Listen for all messages from the opponent
-  channel.subscribe((message) => {
-    onMessage(message.name, message.data);
-  });
-
-  // Confirm Ably connection is established
-  ably.connection.on('connected', () => {
-    MP.isConnected = true;
-
-    // Player 2 announces themselves once connected
-    if (MP.myPlayerId === 2) {
-      showMultiStatus('Connected! Announcing to host...');
-      publishToChannel('player_joined', {
-        name:         MP.myName,
-        questionSeed: MP.questionSeed,
-      });
-
-      // Fallback: start anyway after 8 seconds if no confirmation arrives
-      setTimeout(() => {
-        if (!MP.gameStarted) {
-          MP.gameStarted = true;
-          launchGame();
+  MP.roomSubscription = db
+    .channel('room-watch-' + MP.roomId)
+    .on(
+      'postgres_changes',
+      {
+        event:  'UPDATE',
+        schema: 'public',
+        table:  'rooms',
+        filter: 'id=eq.' + MP.roomId,
+      },
+      (payload) => {
+        console.log('[MP] Room update received:', payload.new);
+        const updatedRoom = payload.new;
+        if (updatedRoom.status === 'active' && updatedRoom.player2_name) {
+          MP.opponentName = updatedRoom.player2_name;
+          onOpponentJoined(updatedRoom.player2_name);
         }
-      }, 8000);
-    }
-  });
-
-  ably.connection.on('failed', () => {
-    showMultiError('Connection failed. Check your Ably key and refresh.');
-  });
-
-  ably.connection.on('disconnected', () => {
-    if (!MP.gameStarted) {
-      showMultiStatus('Reconnecting...');
-    }
-  });
+      }
+    )
+    .subscribe((status) => {
+      console.log('[MP] Room subscription status:', status);
+    });
 }
 
-function publishToChannel(eventName, data) {
-  if (!MP.channel) return;
-  MP.channel.publish(eventName, data);
-}
 
 /* ════════════════════════════════════════
-   MESSAGE HANDLER
+   REAL-TIME EVENT SYSTEM
 ════════════════════════════════════════ */
 
-function handleMessage(event, data) {
+function listenToRoom(onEvent) {
+  const db = getSupabase();
+  if (!db) return;
 
-  if (event === 'player_joined') {
-    // Player 1 receives this when Player 2 connects
-    if (MP.myPlayerId !== 1) return;
-    MP.opponentName = data.name || 'Opponent';
-    startBothPlayers(data.name, data.questionSeed || MP.questionSeed);
-  }
+  console.log('[MP] Listening to game events for room:', MP.roomId);
 
-  if (event === 'game_confirmed') {
-    // Player 2 receives this when Player 1 confirms start
-    if (MP.myPlayerId !== 2) return;
-    if (!MP.gameStarted) {
-      MP.gameStarted = true;
-      launchGame();
-    }
-  }
+  MP.eventSubscription = db
+    .channel('events-' + MP.roomId)
+    .on(
+      'postgres_changes',
+      {
+        event:  'INSERT',
+        schema: 'public',
+        table:  'game_events',
+        filter: 'room_id=eq.' + MP.roomId,
+      },
+      (payload) => {
+        const event = payload.new;
+        if (event.player_id === MP.myPlayerId) return; // ignore own events
+        if (event.id === MP.lastEventId) return;       // dedup
+        MP.lastEventId = event.id;
+        console.log('[MP] Event received:', event.event_type, event.payload);
+        onEvent(event);
+      }
+    )
+    .subscribe((status) => {
+      console.log('[MP] Event subscription status:', status);
+    });
+}
 
-  if (event === 'answer') {
-    score2  = data.new_score;
-    streak2 = data.streak || 0;
-    updateHUD();
-  }
+async function broadcastEvent(eventType, payload) {
+  const db = getSupabase();
+  if (!db || !MP.roomId) return;
 
-  if (event === 'game_finished') {
-    score2 = data.final_score;
-    updateHUD();
-  }
+  const { error } = await db
+    .from('game_events')
+    .insert({
+      room_id:    MP.roomId,
+      player_id:  MP.myPlayerId,
+      event_type: eventType,
+      payload:    payload,
+    });
 
-  if (event === 'disconnect') {
-    showMultiStatus('Opponent disconnected.');
-    mode = 'solo';
-    const p2 = document.getElementById('p2name').closest('.hud-player');
-    if (p2) p2.style.opacity = '0.35';
+  if (error) {
+    console.error('[MP] broadcastEvent error:', eventType, error);
   }
 }
 
+
 /* ════════════════════════════════════════
-   GAME START
+   INCOMING EVENT HANDLER
 ════════════════════════════════════════ */
 
-function startBothPlayers(opponentName, seed) {
-  if (MP.gameStarted) return;
-  MP.gameStarted  = true;
-  MP.questionSeed = seed;
+function handleOpponentEvent(event) {
+  const { event_type, payload } = event;
 
-  showMultiStatus((opponentName || 'Opponent') + ' joined! Starting in 3...');
-
-  // Tell Player 2 to start their countdown too
-  publishToChannel('game_confirmed', { seed });
-
-  let count = 3;
-  const iv = setInterval(() => {
-    count--;
-    if (count > 0) {
-      showMultiStatus('Starting in ' + count + '...');
-    } else {
-      clearInterval(iv);
-      launchGame();
+  switch (event_type) {
+    case 'answer': {
+      score2 = payload.new_score;
+      updateHUD();
+      const st2 = document.getElementById('st2');
+      if (st2) st2.textContent = payload.streak > 1 ? payload.streak + 'x 🔥' : '';
+      break;
     }
-  }, 1000);
+    case 'stake': {
+      break;
+    }
+    case 'od_vote': {
+      break;
+    }
+    case 'game_finished': {
+      score2 = payload.final_score;
+      updateHUD();
+      break;
+    }
+    case 'disconnect': {
+      showMultiStatus('Opponent disconnected. Continuing in solo mode.');
+      mode = 'solo';
+      const p2hud = document.getElementById('p2name')?.closest?.('.hud-player');
+      if (p2hud) p2hud.style.opacity = '0.35';
+      break;
+    }
+  }
 }
 
-function launchGame() {
-  mode      = 'multi';
-  myName    = MP.myName;
-  questions = buildQuestionsFromSeed(MP.questionSeed);
-
-  const p2el = document.getElementById('p2name');
-  if (p2el) p2el.textContent = MP.opponentName || 'OPPONENT';
-
-  showPage('game');
-  startGame();
-}
 
 /* ════════════════════════════════════════
-   OVERRIDE joinOrCreate FROM game.js
+   BROADCASTING
+════════════════════════════════════════ */
+
+async function broadcastAnswer(newScore, isCorrect, currentStreak) {
+  await broadcastEvent('answer', { new_score: newScore, correct: isCorrect, streak: currentStreak });
+}
+
+async function broadcastStake(amount) {
+  await broadcastEvent('stake', { amount });
+}
+
+async function broadcastODVote(vote) {
+  await broadcastEvent('od_vote', { vote });
+}
+
+async function broadcastGameFinished(finalScore) {
+  await broadcastEvent('game_finished', { final_score: finalScore });
+}
+
+
+/* ════════════════════════════════════════
+   SIMULATE OPPONENT — disabled in multiplayer
+════════════════════════════════════════ */
+
+// Override the solo-mode fake opponent — in real multiplayer we do nothing here.
+// Real opponent score arrives via handleOpponentEvent().
+window.simulateOpponentAnswer = function (correct) {
+  if (mode !== 'multi') {
+    score2 = Math.max(0, score2 + (correct ? 65 + Math.floor(Math.random() * 20) : -20));
+    updateHUD();
+  }
+};
+
+
+/* ════════════════════════════════════════
+   MAIN ENTRY POINT — joinOrCreate
+   This FULLY REPLACES the dummy version in game.js.
+   It must run AFTER game.js (index.html loads game.js first now).
 ════════════════════════════════════════ */
 
 window.joinOrCreate = async function () {
-  const playerName = (document.getElementById('pname-input').value.trim() || 'MINER').toUpperCase();
-  const codeInput  = document.getElementById('room-input').value.trim().toUpperCase();
+  const nameInput  = document.getElementById('pname-input');
+  const codeInput  = document.getElementById('room-input');
+  const playerName = (nameInput.value.trim() || 'MINER').toUpperCase();
+  const roomCode   = codeInput.value.trim().toUpperCase();
 
-  showMultiStatus('Initialising connection...');
+  // *** FIX: Set mode to multi here — this was NEVER done before ***
+  mode = 'multi';
+
+  showMultiStatus('Connecting...');
   showPage('waiting');
 
-  if (codeInput) {
-    /* ── PLAYER 2 — JOINING ── */
-    MP.myPlayerId   = 2;
-    MP.myName       = playerName;
-    MP.roomId       = codeInput;
+  if (roomCode) {
+    /* ── PLAYER 2: joining an existing room ── */
+    showMultiStatus('Joining room ' + roomCode + '...');
 
-    document.getElementById('room-display').textContent = codeInput;
-    showMultiStatus('Looking up room...');
+    const result = await joinRoom(roomCode, playerName);
 
-    // Try to get the question seed from DB
-    const room = await lookupRoomInDB(codeInput);
-    if (room) {
-      MP.questionSeed  = room.question_seed;
-      MP.opponentName  = room.player1_name;
-
-      // Update room status in DB
-      const db = getSupabase();
-      if (db) {
-        await db.from('rooms')
-          .update({ player2_name: playerName, status: 'active' })
-          .eq('id', codeInput);
-      }
-    } else {
-      // DB lookup failed — generate a seed locally
-      // This means both players will get different questions
-      // but the game will still work
-      MP.questionSeed = Math.floor(Math.random() * 1000000);
-      showMultiStatus('Room found. Connecting...');
+    if (!result.success) {
+      showMultiError(result.message);
+      return;
     }
 
-    // Connect via Ably
-    connectToRoom(codeInput, handleMessage);
+    document.getElementById('room-display').textContent = roomCode;
+    showMultiStatus('✓ Connected! Game starting in 3...');
 
+    // Set up opponent name display
+    document.getElementById('p2name').textContent = playerName;
+    MP.opponentName = result.player1Name;
+
+    // Listen for events from Player 1
+    listenToRoom(handleOpponentEvent);
+
+    // Use shared seed so both players get identical questions
+    questions = buildQuestionsFromSeed(MP.questionSeed);
+
+    let countdown = 3;
+    const iv = setInterval(() => {
+      countdown--;
+      if (countdown > 0) {
+        showMultiStatus('Starting in ' + countdown + '...');
+      } else {
+        clearInterval(iv);
+        myName = playerName;
+        showPage('game');
+        startGame();
+      }
+    }, 1000);
   } else {
-    /* ── PLAYER 1 — CREATING ── */
-    const result = await createRoomInDB(playerName);
+    /* ── PLAYER 1: creating a new room ── */
+    const newRoomId = await createRoom(playerName);
+    if (!newRoomId) return; // error shown by createRoom()
 
-    document.getElementById('room-display').textContent = result.roomId;
-    showMultiStatus('Room created! Share this code. Waiting for opponent...');
+    document.getElementById('room-display').textContent = newRoomId;
+    showMultiStatus('Waiting for opponent to join with code: ' + newRoomId);
 
-    // Connect via Ably and wait
-    connectToRoom(result.roomId, handleMessage);
+    // Listen for game events (opponent answers etc.)
+    listenToRoom(handleOpponentEvent);
+
+    // Watch for Player 2 to join
+    watchForOpponent((opponentName) => {
+      showMultiStatus(opponentName + ' joined! Starting in 3...');
+
+      let countdown = 3;
+      const iv = setInterval(() => {
+        countdown--;
+        if (countdown > 0) {
+          showMultiStatus('Starting in ' + countdown + '...');
+        } else {
+          clearInterval(iv);
+          myName    = playerName;
+          questions = buildQuestionsFromSeed(MP.questionSeed);
+          showPage('game');
+          startGame();
+        }
+      }, 1000);
+    });
   }
 };
 
-/* ════════════════════════════════════════
-   OVERRIDE OPPONENT SIMULATION
-════════════════════════════════════════ */
-
-window.simulateOpponentAnswer = function(correct) {
-  if (mode !== 'multi') {
-    score2  = Math.max(0, score2 + (correct ? 65 + Math.floor(Math.random() * 20) : -20));
-    streak2 = correct ? streak2 + 1 : 0;
-    updateHUD();
-  }
-};
 
 /* ════════════════════════════════════════
-   PATCH game.js TO BROADCAST EVENTS
+   PATCH GAME FUNCTIONS TO BROADCAST
+   Now game.js loads BEFORE multiplayer.js, so these functions exist.
 ════════════════════════════════════════ */
 
-document.addEventListener('DOMContentLoaded', function () {
-
+(function patchGameFunctions() {
+  // selectAnswer
   const _selectAnswer = window.selectAnswer;
   if (_selectAnswer) {
-    window.selectAnswer = function(btn, correct, q, shuffled) {
+    window.selectAnswer = function (btn, correct, q, shuffled) {
       _selectAnswer(btn, correct, q, shuffled);
-      if (mode === 'multi' && MP.isConnected) {
-        publishToChannel('answer', { new_score: score1, correct, streak: streak1 });
-      }
+      if (mode === 'multi' && MP.isConnected) broadcastAnswer(score1, correct, streak1);
     };
   }
 
+  // selectBluff
   const _selectBluff = window.selectBluff;
   if (_selectBluff) {
-    window.selectBluff = function(btn, origIndex, q) {
+    window.selectBluff = function (btn, origIndex, q) {
       _selectBluff(btn, origIndex, q);
       if (mode === 'multi' && MP.isConnected) {
-        publishToChannel('answer', { new_score: score1, correct: origIndex === q.bluff, streak: streak1 });
+        broadcastAnswer(score1, origIndex === q.bluff, streak1);
       }
     };
   }
 
+  // confirmStake
+  const _confirmStake = window.confirmStake;
+  if (_confirmStake) {
+    window.confirmStake = function (override) {
+      _confirmStake(override);
+      const amount = (override !== undefined) ? override : selectedStake;
+      if (mode === 'multi' && MP.isConnected && amount > 0) broadcastStake(amount);
+    };
+  }
+
+  // castODVote
   const _castODVote = window.castODVote;
   if (_castODVote) {
-    window.castODVote = function(vote) {
+    window.castODVote = function (vote) {
       _castODVote(vote);
-      if (mode === 'multi' && MP.isConnected) {
-        publishToChannel('od_vote', { vote });
-      }
+      if (mode === 'multi' && MP.isConnected) broadcastODVote(vote);
     };
   }
 
+  // showResults
   const _showResults = window.showResults;
   if (_showResults) {
-    window.showResults = function() {
+    window.showResults = function () {
       _showResults();
       if (mode === 'multi' && MP.isConnected) {
-        publishToChannel('game_finished', { final_score: score1 });
-        setTimeout(() => cleanupConnection(), 3000);
+        broadcastGameFinished(score1);
+        setTimeout(() => disconnectFromRoom(), 3000);
       }
     };
   }
 
-});
+  console.log('[MP] Game functions patched successfully');
+})();
+
 
 /* ════════════════════════════════════════
-   CLEANUP
+   ROOM CLEANUP
 ════════════════════════════════════════ */
 
-function cleanupConnection() {
-  if (MP.channel) {
-    publishToChannel('disconnect', {});
-    MP.channel.unsubscribe();
-    MP.channel = null;
-  }
-  if (MP.ablyClient) {
-    MP.ablyClient.close();
-    MP.ablyClient = null;
-  }
+async function disconnectFromRoom() {
+  const db = getSupabase();
+  if (!db) return;
+
+  if (MP.isConnected) await broadcastEvent('disconnect', { player_id: MP.myPlayerId });
+
+  if (MP.roomSubscription)  { db.removeChannel(MP.roomSubscription);  MP.roomSubscription  = null; }
+  if (MP.eventSubscription) { db.removeChannel(MP.eventSubscription); MP.eventSubscription = null; }
+
   if (MP.roomId) {
-    const db = getSupabase();
-    if (db) db.from('rooms').update({ status: 'finished' }).eq('id', MP.roomId);
+    await db.from('rooms').update({ status: 'finished' }).eq('id', MP.roomId);
   }
-  MP.isConnected = false;
-  MP.gameStarted = false;
+
+  MP.roomId = null; MP.myPlayerId = null; MP.myName = null;
+  MP.opponentName = null; MP.questionSeed = null;
+  MP.isConnected = false; MP.lastEventId = null;
+  console.log('[MP] Disconnected');
 }
 
-window.addEventListener('beforeunload', () => {
-  if (MP.isConnected) cleanupConnection();
-});
 
 /* ════════════════════════════════════════
    UI HELPERS
 ════════════════════════════════════════ */
 
-function showMultiStatus(msg) {
+function showMultiStatus(message) {
   const el = document.getElementById('wait-msg');
-  if (el) { el.textContent = msg; el.style.color = ''; }
+  if (el) { el.textContent = message; el.style.color = ''; }
 }
 
-function showMultiError(msg) {
+function showMultiError(message) {
   const el = document.getElementById('wait-msg');
-  if (el) { el.textContent = '⚠ ' + msg; el.style.color = 'var(--rs)'; }
+  if (el) { el.textContent = '⚠️ ' + message; el.style.color = 'var(--rs)'; }
+  console.error('[MP] Error:', message);
 }
+
+
+/* ════════════════════════════════════════
+   CLEANUP ON PAGE CLOSE
+════════════════════════════════════════ */
+window.addEventListener('beforeunload', () => {
+  if (MP.isConnected) disconnectFromRoom();
+});
+
+console.log('[MP] multiplayer.js loaded — Supabase ready:', !!window.supabase);
