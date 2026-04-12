@@ -207,9 +207,14 @@ function joinChannel(roomId, onMessage) {
     // only messages from the other player come through
   });
 
-  // Listen for ALL broadcast events on this channel
-  channel.on('broadcast', { event: '*' }, (msg) => {
-    onMessage(msg.event, msg.payload);
+  // Listen for each specific broadcast event
+  // NOTE: Supabase does NOT support wildcard event: '*'
+  // Each event must be registered individually
+  const events = ['player_joined', 'game_confirmed', 'answer', 'od_vote', 'game_finished', 'disconnect'];
+  events.forEach(eventName => {
+    channel.on('broadcast', { event: eventName }, (msg) => {
+      onMessage(eventName, msg.payload);
+    });
   });
 
   // Subscribe and confirm connection
