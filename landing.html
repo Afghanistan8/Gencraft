@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GENCRAFT — Knowledge Edition</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;700;800&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════
+   RESET & BASE
+══════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --em:  #4ade80;
+  --em2: #22c55e;
+  --em3: #166534;
+  --am:  #fbbf24;
+  --di:  #67e8f9;
+  --rs:  #f87171;
+  --pu:  #c084fc;
+  --go:  #fde047;
+  --bg:  #030803;
+  --bg2: #060e06;
+  --bg3: #0a150a;
+  --stone: #0d180d;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  font-family: 'Press Start 2P', monospace;
+  cursor: default;
+}
+
+/* ══════════════════════════════════════
+   MAIN STAGE
+══════════════════════════════════════ */
+#stage {
+  width: 100vw; height: 100vh;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+/* CRT scanline */
+#stage::after {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg,
+    rgba(0,0,0,0.04) 0px, rgba(0,0,0,0.04) 1px,
+    transparent 1px, transparent 3px);
+  pointer-events: none;
+  z-index: 999;
+}
+
+/* Vignette */
+#stage::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: radial-gradient(ellipse at center,
+    transparent 40%, rgba(0,0,0,0.7) 100%);
+  pointer-events: none;
+  z-index: 998;
+}
+
+/* ══════════════════════════════════════
+   STAR FIELD
+══════════════════════════════════════ */
+#stars {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+.star {
+  position: absolute;
+  border-radius: 50%;
+  background: var(--em);
+  animation: twinkle var(--d, 2s) ease-in-out var(--dl, 0s) infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.08; transform: scale(0.8); }
+  50%       { opacity: 0.7;  transform: scale(1.2); }
+}
+
+/* ══════════════════════════════════════
+   CAVE CEILING — STALACTITES
+══════════════════════════════════════ */
+#ceiling {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 140px;
+  display: flex;
+  align-items: flex-start;
+  overflow: hidden;
+  pointer-events: none;
+}
+.stala {
+  flex-shrink: 0;
+  background: linear-gradient(180deg, #0a1a0a 0%, #04090400 100%);
+  border-left: 1px solid #0d1f0d;
+  border-right: 1px solid #0d1f0d;
+  opacity: 0.9;
+}
+
+/* ══════════════════════════════════════
+   TORCHES
+══════════════════════════════════════ */
+.torch {
+  position: absolute;
+  bottom: 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.torch-flame {
+  width: 12px; height: 16px;
+  border-radius: 50% 50% 40% 40%;
+  position: relative;
+  animation: flicker 0.3s ease-in-out infinite alternate;
+  z-index: 2;
+}
+.torch-flame::before {
+  content: '';
+  position: absolute;
+  inset: 3px 4px;
+  border-radius: 50%;
+  background: rgba(255,255,200,0.8);
+}
+.torch-stick {
+  width: 6px; height: 22px;
+  background: #7c4b1a;
+  border: 1px solid #5a3510;
+  border-radius: 1px;
+  margin-top: -1px;
+}
+.torch-glow {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: glowpulse 1.2s ease-in-out infinite alternate;
+}
+@keyframes flicker {
+  from { transform: scaleX(1) scaleY(1) rotate(-3deg); }
+  to   { transform: scaleX(0.85) scaleY(1.1) rotate(3deg); }
+}
+@keyframes glowpulse {
+  from { opacity: 0.2; transform: scale(1); }
+  to   { opacity: 0.4; transform: scale(1.08); }
+}
+
+/* ══════════════════════════════════════
+   GROUND
+══════════════════════════════════════ */
+#ground {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 72px;
+  display: flex;
+  pointer-events: none;
+}
+.g-tile {
+  flex: 1;
+  border-top: 2px solid;
+  position: relative;
+  overflow: hidden;
+}
+.g-tile::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 3px,
+    transparent 3px, transparent 9px
+  );
+}
+
+/* ══════════════════════════════════════
+   ORE BLOCKS
+══════════════════════════════════════ */
+#ore-row {
+  position: absolute;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 90px;
+}
+
+.ore {
+  width: 38px; height: 38px;
+  border: 2px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px;
+  position: relative;
+  flex-shrink: 0;
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.5s ease, transform 0.5s ease, box-shadow 0.3s;
+  image-rendering: pixelated;
+}
+.ore::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255,255,255,0.025) 0px, rgba(255,255,255,0.025) 2px,
+    transparent 2px, transparent 6px
+  );
+}
+.ore.reveal { opacity: 0.2; transform: translateY(0); }
+.ore.active { opacity: 1; }
+.ore.shatter { animation: shatter 0.35s ease-out forwards; }
+@keyframes shatter {
+  0%   { transform: scale(1); opacity: 1; }
+  40%  { transform: scale(1.25) rotate(8deg); opacity: 0.8; }
+  100% { transform: scale(0.1) rotate(25deg); opacity: 0; }
+}
+
+/* Ore colour themes */
+.ore-coal    { background:#0d0d0d; border-color:#404040; color:#666; }
+.ore-iron    { background:#160e08; border-color:#a0602a; color:#c97b4c; }
+.ore-lapis   { background:#06091a; border-color:#3451c7; color:#74c0fc; }
+.ore-gold    { background:#160e00; border-color:#d4a017; color:#fde047; }
+.ore-redstone{ background:#130303; border-color:#b91c1c; color:#f87171; }
+.ore-diamond { background:#001520; border-color:#06b6d4; color:#67e8f9; }
+.ore-emerald {
+  background:#001208; border-color:#16a34a; color:#4ade80;
+  width: 46px; height: 46px; font-size: 9px;
+}
+.ore-netherite {
+  background:#0a0610; border-color:#6d28d9; color:#c084fc;
+  width: 40px; height: 40px; font-size: 7px;
+}
+.ore-gencraft {
+  background:#000d02; border-color:#4ade80; color:#4ade80;
+  width: 58px; height: 58px; font-size: 7px;
+  text-align: center; line-height: 1.5; padding: 2px;
+  opacity: 0;
+  transform: translateY(20px) scale(0.85);
+  transition: opacity 0.7s ease, transform 0.7s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.5s;
+}
+.ore-gencraft.active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  box-shadow: 0 0 24px rgba(74,222,128,0.45), 0 0 50px rgba(74,222,128,0.15);
+  animation: gcpulse 2s ease-in-out infinite;
+}
+@keyframes gcpulse {
+  0%,100% { box-shadow: 0 0 20px rgba(74,222,128,0.4), 0 0 45px rgba(74,222,128,0.12); }
+  50%     { box-shadow: 0 0 35px rgba(74,222,128,0.65), 0 0 70px rgba(74,222,128,0.22); }
+}
+
+/* ══════════════════════════════════════
+   MINER CHARACTER
+══════════════════════════════════════ */
+#miner {
+  position: absolute;
+  bottom: 72px;
+  transition: left 0.5s cubic-bezier(0.4,0,0.2,1);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+/* Pixel art helmet */
+.m-hat {
+  width: 30px; height: 8px;
+  background: var(--go); border: 1px solid #a16207;
+  position: relative; z-index: 2;
+}
+.m-hat::before {
+  content: ''; position: absolute;
+  top: -6px; left: 4px; width: 22px; height: 7px;
+  background: var(--go); border: 1px solid #a16207;
+}
+.m-hat::after {
+  content: ''; position: absolute;
+  top: 1px; left: 9px; width: 8px; height: 5px;
+  background: rgba(255,255,255,0.2);
+}
+.m-lamp {
+  position: absolute; top: -4px; right: 2px;
+  width: 6px; height: 6px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #fff, 0 0 12px #fff8;
+  animation: lamppulse 1.5s ease-in-out infinite alternate;
+}
+@keyframes lamppulse { from { opacity:0.7; } to { opacity:1; } }
+.m-head {
+  width: 24px; height: 20px;
+  background: #f4a261; border: 1px solid #c47a3b;
+  position: relative; margin-top: -1px;
+}
+.m-head::before {
+  content: ''; position: absolute;
+  top: 6px; left: 4px;
+  width: 5px; height: 5px;
+  background: #2d1f0e;
+  box-shadow: 10px 0 0 #2d1f0e;
+}
+.m-head::after {
+  content: ''; position: absolute;
+  bottom: 3px; left: 7px;
+  width: 10px; height: 2px;
+  background: #c47a3b;
+}
+.m-body {
+  width: 24px; height: 18px;
+  background: #1d6bb5; border: 1px solid #1558a0;
+  position: relative; margin-top: -1px;
+}
+.m-body::before {
+  content: ''; position: absolute;
+  top: 5px; left: 9px;
+  width: 6px; height: 9px;
+  background: #1558a0; border: 1px solid #1249884;
+}
+.m-body::after {
+  content: ''; position: absolute;
+  top: 3px; left: 2px;
+  width: 20px; height: 2px;
+  background: rgba(255,255,255,0.06);
+}
+.m-legs {
+  width: 24px; height: 14px;
+  display: flex; gap: 2px; margin-top: -1px;
+}
+.m-leg {
+  flex: 1;
+  background: #2d3748; border: 1px solid #1a202c;
+}
+.m-leg:first-child { animation: legL 0.35s steps(2) infinite; }
+.m-leg:last-child  { animation: legR 0.35s steps(2) infinite; }
+@keyframes legL { 0%{transform:translateY(0)} 100%{transform:translateY(-4px)} }
+@keyframes legR { 0%{transform:translateY(-4px)} 100%{transform:translateY(0)} }
+.m-arm {
+  position: absolute; right: -12px; top: 32px;
+  width: 14px; height: 5px;
+  background: #1d6bb5; border: 1px solid #1558a0;
+  transform-origin: 0 50%;
+}
+.m-pick {
+  position: absolute; right: -28px; top: 24px;
+  font-size: 18px;
+  transform-origin: 5px 90%;
+  filter: drop-shadow(0 0 4px rgba(74,222,128,0.3));
+}
+
+/* State classes */
+#miner.walking .m-leg:first-child { animation: legL 0.35s steps(2) infinite; }
+#miner.walking .m-leg:last-child  { animation: legR 0.35s steps(2) infinite; }
+#miner.walking .m-pick { animation: walkpick 0.5s ease-in-out infinite alternate; }
+@keyframes walkpick { from{transform:rotate(-15deg)} to{transform:rotate(10deg)} }
+
+#miner.mining .m-leg { animation: none !important; }
+#miner.mining .m-arm { animation: minearm 0.22s ease-in-out infinite alternate; }
+#miner.mining .m-pick{ animation: minepick 0.22s ease-in-out infinite alternate; }
+@keyframes minearm  { from{transform:rotate(-28deg)} to{transform:rotate(18deg)} }
+@keyframes minepick { from{transform:rotate(-55deg) translate(-2px,2px)} to{transform:rotate(25deg) translate(2px,-2px)} }
+
+#miner.idle .m-leg { animation: none !important; }
+#miner.idle .m-arm { animation: none; transform: rotate(-20deg); }
+#miner.idle .m-pick{ animation: none; transform: rotate(-20deg); }
+
+/* ══════════════════════════════════════
+   PARTICLES
+══════════════════════════════════════ */
+.particle {
+  position: absolute; pointer-events: none;
+  width: 5px; height: 5px; border-radius: 1px;
+  animation: pburst var(--dur,0.6s) ease-out forwards;
+}
+@keyframes pburst {
+  0%   { opacity:1; transform:translate(0,0) scale(1); }
+  100% { opacity:0; transform:translate(var(--px),var(--py)) scale(0.15); }
+}
+
+/* ══════════════════════════════════════
+   HUD — PROGRESS BAR
+══════════════════════════════════════ */
+#prog-hud {
+  position: absolute;
+  top: 20px; left: 50%; transform: translateX(-50%);
+  width: 260px;
+  opacity: 0; transition: opacity 0.3s;
+  z-index: 50;
+}
+#prog-hud.show { opacity: 1; }
+.ph-ore-icon {
+  font-size: 7px; color: #2a5a2a; text-align: center;
+  letter-spacing: 0.12em; margin-bottom: 4px;
+}
+.ph-bar-wrap {
+  height: 8px;
+  background: #050f05;
+  border: 1px solid #1a2e1a;
+  border-radius: 1px;
+  overflow: hidden;
+  position: relative;
+}
+.ph-bar {
+  height: 100%; width: 0%;
+  background: var(--em);
+  transition: width 0.08s linear;
+  border-radius: 1px;
+  position: relative;
+}
+.ph-bar::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px, transparent 6px,
+    rgba(255,255,255,0.15) 6px, rgba(255,255,255,0.15) 7px
+  );
+}
+.ph-xp {
+  font-size: 7px; color: var(--em); text-align: right;
+  margin-top: 3px; letter-spacing: 0.08em;
+}
+
+/* ══════════════════════════════════════
+   SOUND VISUALISER
+══════════════════════════════════════ */
+#sv {
+  position: absolute; top: 22px; right: 24px;
+  display: flex; align-items: flex-end; gap: 3px;
+  height: 22px; opacity: 0; transition: opacity 0.3s;
+}
+#sv.show { opacity: 1; }
+.sv-bar {
+  width: 4px; background: var(--em); border-radius: 1px;
+  animation: svani 0.6s ease-in-out infinite;
+}
+.sv-bar:nth-child(1){height:5px; animation-delay:0s}
+.sv-bar:nth-child(2){height:10px;animation-delay:.1s}
+.sv-bar:nth-child(3){height:18px;animation-delay:.18s}
+.sv-bar:nth-child(4){height:10px;animation-delay:.28s}
+.sv-bar:nth-child(5){height:5px; animation-delay:.36s}
+.sv-bar:nth-child(6){height:13px;animation-delay:.1s}
+@keyframes svani{0%,100%{transform:scaleY(0.3);opacity:0.5}50%{transform:scaleY(1);opacity:1}}
+
+/* ══════════════════════════════════════
+   FLOATING XP TEXT
+══════════════════════════════════════ */
+.xp-pop {
+  position: absolute; pointer-events: none;
+  font-size: 10px; font-family: 'Press Start 2P', monospace;
+  animation: xprise 1s ease-out forwards;
+  z-index: 30;
+}
+@keyframes xprise {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  60%  { opacity: 1; transform: translateY(-32px) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-52px) scale(0.8); }
+}
+
+/* ══════════════════════════════════════
+   TITLE REVEAL
+══════════════════════════════════════ */
+#title-screen {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  padding: 20px;
+}
+#title-screen.show {
+  opacity: 1;
+  pointer-events: auto;
+  animation: titlefadein 1s ease forwards;
+}
+@keyframes titlefadein { from{opacity:0} to{opacity:1} }
+
+/* Glow ring behind title */
+.title-glow {
+  position: absolute;
+  width: 500px; height: 300px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(74,222,128,0.06) 0%, transparent 70%);
+  animation: glowing 3s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes glowing {
+  0%,100% { transform: scale(1); opacity: 0.6; }
+  50%     { transform: scale(1.1); opacity: 1; }
+}
+
+/* Top decorative line */
+.title-line {
+  width: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--em), transparent);
+  margin-bottom: 16px;
+  transition: width 1.2s ease;
+}
+.title-line.expand { width: min(500px, 90vw); }
+
+/* Main title */
+#main-title {
+  display: flex; gap: 3px;
+  margin-bottom: 8px;
+  position: relative;
+}
+.t-char {
+  display: inline-block;
+  font-size: clamp(30px, 7vw, 58px);
+  color: var(--em);
+  text-shadow:
+    3px 3px 0 var(--em3),
+    6px 6px 0 #052e16,
+    0 0 50px rgba(74,222,128,0.3);
+  opacity: 0;
+  transform: translateY(30px) rotateX(60deg);
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+}
+.t-char.pop {
+  opacity: 1;
+  transform: translateY(0) rotateX(0deg);
+}
+
+/* Edition tag */
+.edition-tag {
+  font-size: clamp(6px, 1.4vw, 9px);
+  color: #1a6b2a;
+  letter-spacing: 0.2em;
+  margin-bottom: 14px;
+  opacity: 0; transition: opacity 0.7s ease;
+}
+.edition-tag.show { opacity: 1; }
+
+/* Tagline */
+.tagline {
+  font-family: 'Outfit', sans-serif;
+  font-size: clamp(11px, 2.5vw, 16px);
+  font-weight: 300;
+  color: #1e5c28;
+  letter-spacing: 0.08em;
+  text-align: center;
+  margin-bottom: 20px;
+  opacity: 0; transition: opacity 0.7s ease;
+  max-width: 500px;
+}
+.tagline.show { opacity: 1; }
+
+/* Bottom line */
+.title-line-bottom {
+  width: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, #1a3a1a, transparent);
+  margin-bottom: 20px;
+  transition: width 1.2s ease 0.3s;
+}
+.title-line-bottom.expand { width: min(400px, 80vw); }
+
+/* Feature tags */
+.feat-tags {
+  display: flex; gap: 7px; flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 28px;
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.feat-tags.show { opacity: 1; }
+.ftag {
+  font-size: clamp(5px,1.2vw,7px);
+  padding: 5px 11px;
+  border: 1px solid;
+  letter-spacing: 0.08em;
+  position: relative;
+  overflow: hidden;
+}
+.ftag::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.04), transparent);
+}
+.ftag-em { border-color: var(--em); color: var(--em); background: rgba(74,222,128,0.05); }
+.ftag-am { border-color: var(--am); color: var(--am); background: rgba(251,191,36,0.05); }
+.ftag-di { border-color: var(--di); color: var(--di); background: rgba(103,232,249,0.05); }
+.ftag-rs { border-color: var(--rs); color: var(--rs); background: rgba(248,113,113,0.05); }
+.ftag-pu { border-color: var(--pu); color: var(--pu); background: rgba(192,132,252,0.05); }
+
+/* ── ENTER BUTTON ── */
+.enter-btn {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(9px, 2vw, 13px);
+  padding: 16px 36px;
+  background: rgba(74,222,128,0.07);
+  border: 2px solid var(--em);
+  color: var(--em);
+  cursor: pointer;
+  letter-spacing: 0.1em;
+  position: relative;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.5s ease, transform 0.5s ease,
+              background 0.2s, box-shadow 0.2s;
+  margin-bottom: 12px;
+}
+.enter-btn::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 50%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(74,222,128,0.14), transparent);
+  animation: btnshimmer 2.8s ease-in-out infinite;
+}
+@keyframes btnshimmer { 0%{left:-100%} 60%,100%{left:160%} }
+.enter-btn.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.enter-btn:hover {
+  background: rgba(74,222,128,0.16);
+  box-shadow: 0 0 30px rgba(74,222,128,0.35), 0 0 60px rgba(74,222,128,0.1);
+  transform: translateY(-2px);
+}
+.enter-btn:active { transform: scale(0.97) translateY(0); }
+
+.press-hint {
+  font-size: clamp(5px, 1.2vw, 7px);
+  color: #1a4a1a;
+  letter-spacing: 0.12em;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  animation: blinkhint 1.6s step-end infinite;
+}
+.press-hint.show { opacity: 1; }
+@keyframes blinkhint { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+/* Built-on strip */
+.built-on {
+  position: absolute; bottom: 78px;
+  left: 50%; transform: translateX(-50%);
+  font-size: clamp(5px,1vw,6px);
+  color: #0a2a0a;
+  letter-spacing: 0.14em;
+  white-space: nowrap;
+  opacity: 0; transition: opacity 0.6s ease;
+}
+.built-on.show { opacity: 1; }
+
+/* ══════════════════════════════════════
+   WAIT OVERLAY (between mining blocks)
+══════════════════════════════════════ */
+#skip-hint {
+  position: absolute; bottom: 80px; right: 20px;
+  font-size: 6px; color: #0d2e0d;
+  letter-spacing: 0.1em;
+  opacity: 0; transition: opacity 1s ease;
+}
+#skip-hint.show { opacity: 1; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+
+  <!-- Stars -->
+  <div id="stars"></div>
+
+  <!-- Cave ceiling -->
+  <div id="ceiling"></div>
+
+  <!-- Torches (added by JS) -->
+  <div id="torches"></div>
+
+  <!-- HUD -->
+  <div id="prog-hud">
+    <div class="ph-ore-icon" id="ph-label">MINING COAL...</div>
+    <div class="ph-bar-wrap"><div class="ph-bar" id="ph-bar"></div></div>
+    <div class="ph-xp" id="ph-xp"></div>
+  </div>
+
+  <!-- Sound visualiser -->
+  <div id="sv">
+    <div class="sv-bar"></div><div class="sv-bar"></div><div class="sv-bar"></div>
+    <div class="sv-bar"></div><div class="sv-bar"></div><div class="sv-bar"></div>
+  </div>
+
+  <!-- Ore row -->
+  <div id="ore-row"></div>
+
+  <!-- Miner -->
+  <div id="miner" class="walking">
+    <div class="m-hat">
+      <div class="m-lamp"></div>
+    </div>
+    <div class="m-head"></div>
+    <div class="m-body"></div>
+    <div class="m-legs">
+      <div class="m-leg"></div>
+      <div class="m-leg"></div>
+    </div>
+    <div class="m-arm"></div>
+    <div class="m-pick">⛏</div>
+  </div>
+
+  <!-- Ground -->
+  <div id="ground"></div>
+
+  <!-- Skip hint -->
+  <div id="skip-hint">CLICK TO SKIP →</div>
+
+  <!-- Title screen (hidden until end) -->
+  <div id="title-screen">
+    <div class="title-glow"></div>
+    <div class="title-line"   id="tl-top"></div>
+    <div id="main-title"></div>
+    <div class="edition-tag"  id="ed-tag">KNOWLEDGE EDITION · V1.0</div>
+    <div class="tagline"      id="tagline">Mine knowledge. Forge consensus. Build your legacy.</div>
+    <div class="title-line-bottom" id="tl-bot"></div>
+    <div class="feat-tags"    id="feat-tags">
+      <span class="ftag ftag-em">100+ QUESTIONS</span>
+      <span class="ftag ftag-am">XP STAKING</span>
+      <span class="ftag ftag-rs">BLUFF ROUNDS</span>
+      <span class="ftag ftag-di">OD FINALE</span>
+      <span class="ftag ftag-pu">GENLAYER CHAIN</span>
+    </div>
+    <button class="enter-btn" id="enter-btn" onclick="enterGame()">
+      ⛏ &nbsp;ENTER THE MINE
+    </button>
+    <div class="press-hint"   id="press-hint">PRESS TO BEGIN YOUR VALIDATOR JOURNEY</div>
+    <div class="built-on"     id="built-on">POWERED BY GENLAYER INTELLIGENT CONTRACTS</div>
+  </div>
+
+</div>
+
+<script>
+/* ══════════════════════════════════════
+   SCENE SETUP
+══════════════════════════════════════ */
+const stage    = document.getElementById('stage');
+const oreRow   = document.getElementById('ore-row');
+const miner    = document.getElementById('miner');
+const sv       = document.getElementById('sv');
+const progHud  = document.getElementById('prog-hud');
+const phBar    = document.getElementById('ph-bar');
+const phLabel  = document.getElementById('ph-label');
+const phXp     = document.getElementById('ph-xp');
+
+const W = window.innerWidth;
+const H = window.innerHeight;
+
+/* ── Stars ── */
+const starsEl = document.getElementById('stars');
+for (let i = 0; i < 80; i++) {
+  const s = document.createElement('div');
+  s.className = 'star';
+  const sz = Math.random() < 0.15 ? 3 : Math.random() < 0.4 ? 2 : 1;
+  s.style.cssText = [
+    `width:${sz}px`, `height:${sz}px`,
+    `left:${Math.random()*100}%`,
+    `top:${Math.random()*80}%`,
+    `--d:${1.5+Math.random()*3}s`,
+    `--dl:${Math.random()*4}s`
+  ].join(';');
+  starsEl.appendChild(s);
+}
+
+/* ── Cave ceiling ── */
+const ceiling = document.getElementById('ceiling');
+for (let i = 0; i < 32; i++) {
+  const d = document.createElement('div');
+  d.className = 'stala';
+  const w = 14 + Math.random() * 34;
+  const h = 18 + Math.random() * 100;
+  d.style.cssText = `
+    width:${w}px; height:${h}px; flex-shrink:0;
+    clip-path:polygon(0 0, 100% 0, ${48+Math.random()*8}% 100%);
+    opacity:${0.7+Math.random()*0.3}
+  `;
+  ceiling.appendChild(d);
+}
+
+/* ── Ground ── */
+const groundEl = document.getElementById('ground');
+const gCols   = ['#090f09','#080d08','#0b130b','#070c07','#0a100a'];
+const gBorder = ['#142214','#112011','#162816','#0f1e0f','#132113'];
+for (let i = 0; i < 26; i++) {
+  const t = document.createElement('div');
+  t.className = 'g-tile';
+  t.style.background = gCols[i % gCols.length];
+  t.style.borderColor = gBorder[i % gBorder.length];
+  groundEl.appendChild(t);
+}
+
+/* ── Torches ── */
+const torchesEl = document.getElementById('torches');
+const torchPos = [0.12, 0.38, 0.62, 0.88];
+const tColors  = ['#ff8c00','#ff6600','#ffa500','#ff7700'];
+torchPos.forEach((p, i) => {
+  // Glow pool on ground
+  const glow = document.createElement('div');
+  glow.className = 'torch-glow';
+  glow.style.cssText = `
+    position:absolute;
+    width:180px; height:100px;
+    left:${p*100}%; bottom:0px;
+    transform:translateX(-50%);
+    border-radius:50%;
+    background:radial-gradient(ellipse, ${tColors[i]}18 0%, transparent 70%);
+    animation:glowpulse 1.2s ease-in-out ${i*0.3}s infinite alternate;
+  `;
+  torchesEl.appendChild(glow);
+
+  // Torch itself
+  const wrap = document.createElement('div');
+  wrap.className = 'torch';
+  wrap.style.cssText = `left:${p*100}%;transform:translateX(-50%);z-index:5`;
+  wrap.innerHTML = `
+    <div class="torch-flame" style="background:${tColors[i]};box-shadow:0 0 10px ${tColors[i]},0 0 20px ${tColors[i]}99"></div>
+    <div class="torch-stick"></div>
+  `;
+  torchesEl.appendChild(wrap);
+});
+
+/* ══════════════════════════════════════
+   AUDIO ENGINE
+══════════════════════════════════════ */
+let actx = null;
+function getCtx() {
+  if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  return actx;
+}
+function tone(freq, type = 'square', dur = 0.1, vol = 0.07, delay = 0) {
+  try {
+    const ctx  = getCtx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const t    = ctx.currentTime + delay;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t);
+    gain.gain.setValueAtTime(vol, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    osc.start(t); osc.stop(t + dur + 0.01);
+  } catch(e) {}
+}
+function mineHit(type) {
+  const map = {
+    coal: 75, iron: 140, lapis: 200, gold: 262,
+    redstone: 165, diamond: 330, emerald: 415,
+    netherite: 290, gencraft: 523
+  };
+  const f = map[type] || 200;
+  tone(f, 'square', 0.07, 0.12);
+  setTimeout(() => tone(f * 1.5, 'square', 0.05, 0.07), 45);
+  setTimeout(() => tone(f * 0.75, 'sawtooth', 0.06, 0.04), 22);
+}
+function playTheme() {
+  // Melody
+  const mel = [
+    [523,0],[659,.13],[784,.26],[1046,.43],
+    [880,.6],[784,.73],[659,.88],[523,1.04],
+    [659,1.22],[784,1.36],[1046,1.52],[1318,1.7],
+    [1046,1.9],[784,2.08],[1046,2.24],[1318,2.42],[1568,2.62]
+  ];
+  mel.forEach(([f,t]) => tone(f, 'square', 0.22, 0.075, t));
+  // Bass
+  const bass = [130,165,196,130,165,196,246,196,130];
+  bass.forEach((f,i) => tone(f, 'sawtooth', 0.28, 0.045, i*0.32));
+  // Harmony pad
+  const pad = [[329,0.1],[392,0.5],[493,1.0],[523,1.5],[659,2.0]];
+  pad.forEach(([f,t]) => tone(f, 'sine', 0.4, 0.03, t));
+}
+function playRevealChord() {
+  [523, 659, 784, 1046].forEach((f,i) =>
+    setTimeout(() => tone(f,'square',0.35,0.1), i*80)
+  );
+}
+
+/* ══════════════════════════════════════
+   ORE CONFIG
+══════════════════════════════════════ */
+const ORES = [
+  { id:'coal',     label:'C',    cls:'ore-coal',     xp:'+5',   msg:'MINING COAL...',      col:'#444' },
+  { id:'iron',     label:'Fe',   cls:'ore-iron',     xp:'+15',  msg:'STRIKING IRON...',    col:'#c97b4c' },
+  { id:'lapis',    label:'La',   cls:'ore-lapis',    xp:'+25',  msg:'UNEARTHING LAPIS...', col:'#74c0fc' },
+  { id:'gold',     label:'Au',   cls:'ore-gold',     xp:'+40',  msg:'FORGING GOLD...',     col:'#fde047' },
+  { id:'redstone', label:'RS',   cls:'ore-redstone', xp:'+35',  msg:'TAPPING REDSTONE...',col:'#f87171' },
+  { id:'diamond',  label:'◆',    cls:'ore-diamond',  xp:'+80',  msg:'CRACKING DIAMOND...', col:'#67e8f9' },
+  { id:'emerald',  label:'◈',    cls:'ore-emerald',  xp:'+120', msg:'EMERALD VEIN!',       col:'#4ade80' },
+  { id:'netherite',label:'N',    cls:'ore-netherite',xp:'+200', msg:'FORGING NETHERITE...',col:'#c084fc' },
+];
+
+/* Build ore elements */
+const oreEls = [];
+ORES.forEach(o => {
+  const el = document.createElement('div');
+  el.className = `ore ${o.cls}`;
+  el.textContent = o.label;
+  oreRow.appendChild(el);
+  oreEls.push(el);
+});
+
+// GENCRAFT special block
+const gcEl = document.createElement('div');
+gcEl.className = 'ore ore-gencraft';
+gcEl.innerHTML = 'GEN<br>CRAFT';
+oreRow.appendChild(gcEl);
+
+/* ══════════════════════════════════════
+   MINER MOVEMENT
+══════════════════════════════════════ */
+let minerLeft = 30;
+miner.style.left = minerLeft + 'px';
+
+function getOreCenter(idx) {
+  const el = idx < oreEls.length ? oreEls[idx] : gcEl;
+  const br = el.getBoundingClientRect();
+  const sr = stage.getBoundingClientRect();
+  return br.left - sr.left + br.width / 2 - 22;
+}
+
+function walkTo(targetX, onArrival) {
+  const dist = Math.abs(targetX - minerLeft);
+  const dur  = Math.max(0.4, dist / 280);
+  miner.style.transitionDuration = dur + 's';
+  miner.style.left = targetX + 'px';
+  miner.className = 'walking';
+  minerLeft = targetX;
+  setTimeout(() => {
+    miner.className = 'idle';
+    onArrival && onArrival();
+  }, dur * 1000 + 50);
+}
+
+/* ══════════════════════════════════════
+   PARTICLES + XP FLOATERS
+══════════════════════════════════════ */
+function burst(cx, cy, col, n = 10) {
+  for (let i = 0; i < n; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    p.style.background = col;
+    p.style.left = cx + 'px';
+    p.style.top  = cy + 'px';
+    const angle = (Math.random() * 360) * Math.PI / 180;
+    const dist  = 14 + Math.random() * 32;
+    p.style.setProperty('--px', (Math.cos(angle)*dist) + 'px');
+    p.style.setProperty('--py', (Math.sin(angle)*dist - 18) + 'px');
+    p.style.setProperty('--dur', (0.4+Math.random()*0.4)+'s');
+    stage.appendChild(p);
+    setTimeout(() => p.remove(), 900);
+  }
+}
+
+function xpFloat(x, y, txt, col) {
+  const el = document.createElement('div');
+  el.className = 'xp-pop';
+  el.textContent = txt;
+  el.style.left  = (x - 20) + 'px';
+  el.style.top   = (y - 10) + 'px';
+  el.style.color = col;
+  stage.appendChild(el);
+  setTimeout(() => el.remove(), 1000);
+}
+
+/* ══════════════════════════════════════
+   MINING LOGIC
+══════════════════════════════════════ */
+let progTimer = null;
+let skipped   = false;
+
+// Reveal all blocks faintly at start
+function showBlockShadows() {
+  oreEls.forEach((el, i) => {
+    setTimeout(() => {
+      el.style.opacity = '0.12';
+      el.style.transform = 'translateY(0)';
+    }, i * 50);
+  });
+  gcEl.style.opacity = '0.06';
+  gcEl.style.transform = 'translateY(0) scale(0.9)';
+}
+
+function mineBlock(idx, ore, onDone) {
+  // Highlight active block
+  if (idx < oreEls.length) oreEls[idx].classList.add('active');
+  const tx = getOreCenter(idx);
+
+  walkTo(tx, () => {
+    miner.className = 'mining';
+    progHud.classList.add('show');
+    sv.classList.add('show');
+    phLabel.textContent = ore.msg;
+    phXp.textContent    = '';
+    phBar.style.width   = '0%';
+    phBar.style.background = ore.col;
+
+    let pct = 0;
+    progTimer = setInterval(() => {
+      pct += 7 + Math.random() * 6;
+      if (pct > 100) pct = 100;
+      phBar.style.width = pct + '%';
+      mineHit(ore.id);
+
+      if (pct >= 100) {
+        clearInterval(progTimer);
+        phXp.textContent = ore.xp + ' XP';
+
+        // Get block screen position for particles
+        const el   = idx < oreEls.length ? oreEls[idx] : gcEl;
+        const br   = el.getBoundingClientRect();
+        const sr   = stage.getBoundingClientRect();
+        const cx   = br.left - sr.left + br.width / 2;
+        const cy   = br.top  - sr.top  + br.height / 2;
+
+        burst(cx, cy, ore.col, 12);
+        xpFloat(cx, cy, ore.xp + ' XP', ore.col);
+
+        if (idx < oreEls.length) {
+          oreEls[idx].classList.add('shatter');
+        }
+
+        tone(ore.col === '#4ade80' ? 523 : 392, 'square', 0.18, 0.12);
+
+        setTimeout(() => {
+          if (idx < oreEls.length) oreEls[idx].style.opacity = '0';
+          progHud.classList.remove('show');
+          sv.classList.remove('show');
+          phBar.style.width = '0%';
+          onDone && onDone();
+        }, 380);
+      }
+    }, 85);
+  });
+}
+
+function mineGencraftBlock(onDone) {
+  gcEl.classList.add('active');
+  const tx = getOreCenter(ORES.length);
+
+  miner.style.transitionDuration = '0.9s';
+  miner.style.left = tx + 'px';
+  miner.className = 'walking';
+  minerLeft = tx;
+
+  setTimeout(() => {
+    miner.className = 'mining';
+    progHud.classList.add('show');
+    sv.classList.add('show');
+    phLabel.textContent = 'MINING GENCRAFT...';
+    phBar.style.background = '#4ade80';
+    phXp.textContent = '';
+    phBar.style.width = '0%';
+
+    let pct = 0;
+    progTimer = setInterval(() => {
+      pct += 2.5 + Math.random() * 2;
+      if (pct > 100) pct = 100;
+      phBar.style.width = pct + '%';
+      tone(180 + pct * 3.4, 'square', 0.055, 0.08);
+
+      if (pct >= 100) {
+        clearInterval(progTimer);
+        progHud.classList.remove('show');
+        sv.classList.remove('show');
+        miner.className = 'idle';
+
+        const br = gcEl.getBoundingClientRect();
+        const sr = stage.getBoundingClientRect();
+        const cx = br.left - sr.left + br.width / 2;
+        const cy = br.top  - sr.top  + br.height / 2;
+
+        // Triple burst
+        for (let k = 0; k < 3; k++) {
+          setTimeout(() => burst(cx, cy, '#4ade80', 14), k * 110);
+        }
+        gcEl.classList.add('shatter');
+
+        setTimeout(() => {
+          gcEl.style.opacity = '0';
+          onDone && onDone();
+        }, 420);
+      }
+    }, 75);
+  }, 950);
+}
+
+/* ══════════════════════════════════════
+   TITLE SEQUENCE
+══════════════════════════════════════ */
+function revealTitle() {
+  playTheme();
+
+  const titleScreen = document.getElementById('title-screen');
+  const mainTitle   = document.getElementById('main-title');
+  const tlTop       = document.getElementById('tl-top');
+  const tlBot       = document.getElementById('tl-bot');
+
+  titleScreen.classList.add('show');
+
+  // Build letters
+  'GENCRAFT'.split('').forEach(c => {
+    const s = document.createElement('span');
+    s.className = 't-char';
+    s.textContent = c;
+    mainTitle.appendChild(s);
+  });
+
+  // Top line expands
+  setTimeout(() => tlTop.classList.add('expand'), 100);
+
+  // Letters pop in one by one
+  setTimeout(() => {
+    const chars = mainTitle.querySelectorAll('.t-char');
+    chars.forEach((ch, i) => {
+      setTimeout(() => {
+        ch.classList.add('pop');
+        tone(261 + i * 58, 'square', 0.22, 0.085);
+      }, i * 95);
+    });
+  }, 200);
+
+  // Chain the reveals
+  setTimeout(() => document.getElementById('ed-tag').classList.add('show'),  1100);
+  setTimeout(() => document.getElementById('tagline').classList.add('show'), 1400);
+  setTimeout(() => tlBot.classList.add('expand'),                             1650);
+  setTimeout(() => document.getElementById('feat-tags').classList.add('show'),1950);
+  setTimeout(() => {
+    playRevealChord();
+    const btn = document.getElementById('enter-btn');
+    btn.classList.add('show');
+    document.getElementById('press-hint').classList.add('show');
+    document.getElementById('built-on').classList.add('show');
+  }, 2450);
+}
+
+/* ══════════════════════════════════════
+   FULL SEQUENCE RUNNER
+══════════════════════════════════════ */
+function runSequence(idx) {
+  if (skipped) return;
+  if (idx < ORES.length) {
+    mineBlock(idx, ORES[idx], () => {
+      setTimeout(() => runSequence(idx + 1), 200);
+    });
+  } else {
+    setTimeout(() => {
+      mineGencraftBlock(() => {
+        setTimeout(revealTitle, 600);
+      });
+    }, 300);
+  }
+}
+
+/* ══════════════════════════════════════
+   SKIP FUNCTIONALITY
+══════════════════════════════════════ */
+function skipToTitle() {
+  if (skipped) return;
+  skipped = true;
+  clearInterval(progTimer);
+
+  // Hide mining UI
+  progHud.classList.remove('show');
+  sv.classList.remove('show');
+
+  // Fade out scene elements
+  oreRow.style.transition   = 'opacity 0.4s';
+  oreRow.style.opacity      = '0';
+  miner.style.transition    = 'opacity 0.4s';
+  miner.style.opacity       = '0';
+
+  setTimeout(revealTitle, 400);
+}
+
+stage.addEventListener('click', () => {
+  if (!document.getElementById('title-screen').classList.contains('show')) {
+    skipToTitle();
+  }
+});
+
+/* ══════════════════════════════════════
+   ENTER GAME
+══════════════════════════════════════ */
+function enterGame() {
+  // Fade out landing, go to main game
+  const ts = document.getElementById('title-screen');
+  ts.style.transition = 'opacity 0.6s';
+  ts.style.opacity    = '0';
+
+  setTimeout(() => {
+    // If embedded in index.html alongside game, call showPage('splash')
+    // Otherwise navigate to the game URL
+    if (typeof showPage === 'function') {
+      showPage('splash');
+    } else {
+      window.location.href = 'index.html';
+    }
+  }, 650);
+}
+
+/* ══════════════════════════════════════
+   START
+══════════════════════════════════════ */
+showBlockShadows();
+
+// Show skip hint after 2 seconds
+setTimeout(() => {
+  document.getElementById('skip-hint').classList.add('show');
+}, 2000);
+
+// Start mining sequence
+setTimeout(() => runSequence(0), 700);
+</script>
+</body>
+</html>
