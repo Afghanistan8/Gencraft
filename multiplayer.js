@@ -64,11 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Save to Supabase (so P2 can find it)
         const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        const { error } = await sb.from('rooms').insert([{ 
-          id: window.MP.roomCode,
-          host_name: window.myName,
-          seed: Math.floor(Math.random() * 1000000)
-        }]);
+        const { error } = await sb.from('rooms').insert([{ id: window.MP.roomCode }]);
 
         if(error) throw error;
 
@@ -185,13 +181,14 @@ function handleMessage(message) {
       } else {
         clearInterval(iv);
         // Start Game
-        publishMessage('game_start', { seed: 1234 });
+        publishMessage('game_start', { seed: 1234, hostName: window.myName });
         startGameFromEvent(1234);
       }
     }, 1000);
   }
 
   if (name === 'game_start' && !window.MP.isHost) {
+    window.MP.opponentName = data.hostName || 'HOST';
     startGameFromEvent(data.seed);
   }
 

@@ -32,8 +32,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const web3Btn = document.createElement('button');
     web3Btn.className = 'tb-nav-btn';
     web3Btn.id = 'gl-connect-btn';
+    web3Btn.type = 'button'; // Explicitly set type
     web3Btn.innerHTML = '<span style="color:#7dd3fc">◈</span> CONNECT WALLET';
-    web3Btn.onclick = connectGenLayer;
+    web3Btn.addEventListener('click', connectGenLayer);
     navArea.appendChild(web3Btn);
   }
 
@@ -43,13 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const submitBtn = document.createElement('button');
     submitBtn.className = 'btn-primary';
     submitBtn.id = 'gl-submit-btn';
+    submitBtn.type = 'button';
     submitBtn.style.marginTop = '12px';
     submitBtn.style.background = 'rgba(125, 211, 252, 0.1)';
     submitBtn.style.border = '1px solid var(--di)';
     submitBtn.style.color = 'var(--di)';
     submitBtn.style.display = 'none'; // Hidden by default until game ends
     submitBtn.innerHTML = 'SUBMIT SCORE TO GENLAYER';
-    submitBtn.onclick = submitScoreOnChain;
+    submitBtn.addEventListener('click', submitScoreOnChain);
     resActions.appendChild(submitBtn);
   }
 });
@@ -60,20 +62,28 @@ document.addEventListener('DOMContentLoaded', () => {
 ──────────────────────────────────────── */
 async function connectGenLayer() {
   const btn = document.getElementById('gl-connect-btn');
+  if (!btn) return;
 
   if (glWalletAddress) {
-    alert('Wallet already connected: ' + glWalletAddress);
+    btn.innerHTML = '<span style="color:#eab308">✓</span> ALREADY CONNECTED';
+    setTimeout(() => {
+      const shortAddr = glWalletAddress.substring(0,6) + '...' + glWalletAddress.substring(38);
+      btn.innerHTML = `<span style="color:#4ade80">●</span> ${shortAddr}`;
+    }, 2000);
     return;
   }
 
   if (!window.ethereum) {
-    alert('MetaMask not found. Please install MetaMask to connect to GenLayer.');
+    btn.innerHTML = '<span style="color:#f87171">⚠</span> NO METAMASK';
+    setTimeout(() => {
+      btn.innerHTML = '<span style="color:#7dd3fc">◈</span> CONNECT WALLET';
+    }, 3000);
     return;
   }
 
   try {
     glIsConnecting = true;
-    btn.innerHTML = 'CONNECTING...';
+    btn.innerHTML = '<span style="color:#7dd3fc">⟳</span> CONNECTING...';
 
     // Request accounts
     const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
@@ -123,7 +133,7 @@ async function setupGenLayerNetwork() {
               rpcUrls: ['https://testnet.genlayer.com'],
               nativeCurrency: {
                 name: 'GEN',
-                symbol: 'GEN', // Fake token for testnet
+                symbol: 'GEN',
                 decimals: 18
               },
               blockExplorerUrls: ['https://studio.genlayer.com/explorer']
@@ -132,9 +142,11 @@ async function setupGenLayerNetwork() {
         });
       } catch (addError) {
         console.error('[GENLAYER] Failed to add network:', addError);
+        // Do not throw, allow connection to proceed anyway
       }
     } else {
       console.error('[GENLAYER] Failed to switch network:', switchError);
+      // Do not throw, allow connection to proceed anyway
     }
   }
 }
