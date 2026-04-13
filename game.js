@@ -278,112 +278,137 @@ function animateScore(elementId, fromValue, toValue, duration) {
    Generates a PNG image players can share
 ════════════════════════════════════════ */
 
-function generateShareCard(playerName, finalScore, correctCount, bluffCount, odBonus, totalQuestions) {
-  const canvas  = document.createElement('canvas');
-  canvas.width  = 600;
-  canvas.height = 360;
-  const ctx     = canvas.getContext('2d');
+function generateShareCard(playerName, finalScore, correctCount, bluffCount, odBonus, totalQuestions, position, gameMode, opponentName, opponentScore) {
+  position      = position      || 1;
+  gameMode      = gameMode      || 'solo';
+  opponentName  = opponentName  || null;
+  opponentScore = opponentScore || 0;
 
-  // Background
-  ctx.fillStyle = '#141a14';
-  ctx.fillRect(0, 0, 600, 360);
+  const W = 640, H = opponentName ? 420 : 390;
+  const canvas = document.createElement('canvas');
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
 
-  // Subtle grid pattern
-  ctx.fillStyle = 'rgba(74,222,128,0.03)';
-  for (let x = 0; x < 600; x += 20) {
-    for (let y = 0; y < 360; y += 20) {
-      if ((x + y) % 40 === 0) ctx.fillRect(x, y, 20, 20);
-    }
-  }
+  ctx.fillStyle = '#0d1410';
+  ctx.fillRect(0, 0, W, H);
 
-  // Border
+  ctx.fillStyle = 'rgba(74,222,128,0.02)';
+  for (let x = 0; x < W; x += 16)
+    for (let y = 0; y < H; y += 16)
+      if ((x + y) % 32 === 0) ctx.fillRect(x, y, 16, 16);
+
+  ctx.shadowColor = 'rgba(74,222,128,0.45)';
+  ctx.shadowBlur  = 18;
   ctx.strokeStyle = '#4ade80';
   ctx.lineWidth   = 2;
-  ctx.strokeRect(10, 10, 580, 340);
+  ctx.strokeRect(12, 12, W-24, H-24);
+  ctx.shadowBlur  = 0;
 
-  // Corner accents
-  [[10,10],[590,10],[10,350],[590,350]].forEach(([cx,cy]) => {
+  [[12,12],[W-12,12],[12,H-12],[W-12,H-12]].forEach(([cx,cy]) => {
+    const sx = cx < W/2 ? 1 : -1, sy = cy < H/2 ? 1 : -1;
     ctx.fillStyle = '#4ade80';
-    ctx.fillRect(cx - 2, cy - 2, 14, 2);
-    ctx.fillRect(cx - 2, cy - 2, 2, 14);
+    ctx.fillRect(cx - sx, cy - sy, sx*14, sy*2);
+    ctx.fillRect(cx - sx, cy - sy, sx*2, sy*14);
   });
 
-  // Header label
-  ctx.fillStyle = '#7a9a7a'; ctx.font = '11px monospace'; ctx.textAlign = 'center';
-  ctx.fillText('// GENCRAFT · KNOWLEDGE EDITION //', 300, 38);
+  ctx.fillStyle = '#3a5a3a'; ctx.font = '10px monospace'; ctx.textAlign = 'center';
+  ctx.fillText('// GENCRAFT · KNOWLEDGE EDITION · BUILT ON GENLAYER //', W/2, 34);
 
-  // GENCRAFT title
-  ctx.fillStyle = '#4ade80'; ctx.font = 'bold 36px monospace';
-  ctx.shadowColor = 'rgba(74,222,128,0.4)'; ctx.shadowBlur = 15;
-  ctx.fillText('GENCRAFT', 300, 90);
-  ctx.shadowBlur = 0;
+  ctx.shadowColor = 'rgba(74,222,128,0.55)'; ctx.shadowBlur = 22;
+  ctx.fillStyle   = '#4ade80'; ctx.font = 'bold 44px monospace';
+  ctx.fillText('GENCRAFT', W/2, 88);
+  ctx.shadowBlur  = 0;
 
-  // Player name
-  ctx.fillStyle = '#f5fff5'; ctx.font = 'bold 22px monospace';
-  ctx.fillText(playerName.toUpperCase(), 300, 130);
+  const posCol  = position === 1 ? '#fde047' : '#7dd3fc';
+  const posText = position === 1 ? '  1ST PLACE  ' : '  2ND PLACE  ';
+  ctx.font = 'bold 11px monospace';
+  const bw = ctx.measureText(posText).width + 20;
+  ctx.fillStyle   = position === 1 ? 'rgba(253,224,71,0.1)' : 'rgba(125,211,252,0.08)';
+  ctx.fillRect(W/2 - bw/2, 100, bw, 26);
+  ctx.strokeStyle = posCol; ctx.lineWidth = 1;
+  ctx.strokeRect(W/2 - bw/2, 100, bw, 26);
+  ctx.fillStyle = posCol;
+  ctx.fillText(posText, W/2, 117);
 
-  // Divider
-  ctx.strokeStyle = '#4a5e4a'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(60, 148); ctx.lineTo(540, 148); ctx.stroke();
+  ctx.fillStyle = '#f0fff0'; ctx.font = 'bold 26px monospace';
+  ctx.fillText(playerName.toUpperCase(), W/2, 154);
 
-  // Score
-  ctx.fillStyle = '#4ade80'; ctx.font = 'bold 56px monospace';
-  ctx.shadowColor = 'rgba(74,222,128,0.4)'; ctx.shadowBlur = 20;
-  ctx.fillText(finalScore + ' XP', 300, 215);
-  ctx.shadowBlur = 0;
+  ctx.strokeStyle = '#1e2e1e'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(50, 168); ctx.lineTo(W-50, 168); ctx.stroke();
 
-  // Validator rank
+  ctx.shadowColor = 'rgba(74,222,128,0.5)'; ctx.shadowBlur = 20;
+  ctx.fillStyle   = '#4ade80'; ctx.font = 'bold 60px monospace';
+  ctx.fillText(finalScore + ' XP', W/2, 238);
+  ctx.shadowBlur  = 0;
+
   const rank = finalScore >= 900 ? 'OPTIMISTIC ORACLE'
              : finalScore >= 650 ? 'CONSENSUS MASTER'
              : finalScore >= 400 ? 'SENIOR VALIDATOR'
              : finalScore >= 200 ? 'JUNIOR VALIDATOR'
              : 'NODE LEARNER';
-  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 16px monospace';
-  ctx.fillText(rank, 300, 242);
+  ctx.fillStyle = '#fbbf24'; ctx.font = 'bold 15px monospace';
+  ctx.fillText(rank, W/2, 263);
 
-  // Stats boxes
-  [{label:'CORRECT', value:correctCount+'/'+totalQuestions},
-   {label:'BLUFFS',  value:bluffCount+' CAUGHT'},
-   {label:'OD BONUS',value:odBonus?'+50 XP':'MISSED'}
-  ].forEach((stat, i) => {
-    const x = 120 + i * 180;
-    ctx.fillStyle = 'rgba(74,222,128,0.08)';
-    ctx.fillRect(x - 65, 260, 130, 56);
-    ctx.strokeStyle = '#4a5e4a'; ctx.lineWidth = 1;
-    ctx.strokeRect(x - 65, 260, 130, 56);
-    ctx.fillStyle = i === 2 && odBonus ? '#7dd3fc' : '#f5fff5';
-    ctx.font = 'bold 15px monospace'; ctx.textAlign = 'center';
-    ctx.fillText(stat.value, x, 283);
-    ctx.fillStyle = '#7a9a7a'; ctx.font = '10px monospace';
-    ctx.fillText(stat.label, x, 302);
+  const stats = [
+    {label:'CORRECT', value:correctCount+'/'+totalQuestions, col:'#e0ffe0'},
+    {label:'BLUFFS',  value:bluffCount+' CAUGHT',            col:'#e0ffe0'},
+    {label:'OD BONUS',value:odBonus?'+50 XP':'MISSED',       col:odBonus?'#7dd3fc':'#e0ffe0'}
+  ];
+  stats.forEach((stat, i) => {
+    const x = 107 + i * 213;
+    ctx.fillStyle = 'rgba(74,222,128,0.05)';
+    ctx.fillRect(x-84, 278, 168, 62);
+    ctx.strokeStyle = '#1e2e1e'; ctx.lineWidth = 1;
+    ctx.strokeRect(x-84, 278, 168, 62);
+    ctx.fillStyle = stat.col; ctx.font = 'bold 16px monospace';
+    ctx.fillText(stat.value, x, 304);
+    ctx.fillStyle = '#3a5a3a'; ctx.font = '10px monospace';
+    ctx.fillText(stat.label, x, 324);
   });
 
-  // Watermark
-  ctx.fillStyle = '#4a5e4a'; ctx.font = '10px monospace';
-  ctx.fillText('BUILT ON GENLAYER · ' + new Date().toLocaleDateString(), 300, 340);
+  if (opponentName) {
+    const vy = 358;
+    ctx.fillStyle = '#111d11';
+    ctx.fillRect(40, vy-14, W-80, 28);
+    ctx.strokeStyle = '#1e2e1e'; ctx.lineWidth = 1;
+    ctx.strokeRect(40, vy-14, W-80, 28);
+    const won = finalScore >= opponentScore;
+    ctx.fillStyle = '#2e4e2e'; ctx.textAlign = 'left'; ctx.font = '11px monospace';
+    ctx.fillText('VS ' + opponentName.toUpperCase() + ' — ' + opponentScore + ' XP', 55, vy+4);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = won ? '#4ade80' : '#f87171';
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText(won ? 'YOU WIN' : 'DEFEATED', W-55, vy+4);
+    ctx.textAlign = 'center';
+  }
 
-  // Download the image
+  const wmY = H - 14;
+  ctx.fillStyle = '#1e3e1e'; ctx.font = '9px monospace';
+  ctx.fillText('gencraft-brown.vercel.app  ·  ' + new Date().toLocaleDateString(), W/2, wmY);
+
   const dataURL = canvas.toDataURL('image/png');
   const link    = document.createElement('a');
   link.download = 'gencraft-' + playerName.toLowerCase() + '-' + finalScore + 'xp.png';
   link.href     = dataURL;
   link.click();
 
-  // Open preview in new tab
   const win = window.open();
   if (win) {
     win.document.write(
-      '<html><body style="margin:0;background:#141a14;display:flex;align-items:center;justify-content:center;min-height:100vh">' +
-      '<div style="text-align:center">' +
-      '<img src="' + dataURL + '" style="max-width:100%;border-radius:8px"/>' +
-      '<p style="color:#4ade80;font-family:monospace;margin-top:12px;font-size:12px">Right click the image → Save as, then share it!</p>' +
-      '</div></body></html>'
+      '<html><body style="margin:0;background:#0d1410;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;gap:12px">' +
+      '<img src="' + dataURL + '" style="max-width:95%;border-radius:4px;box-shadow:0 0 30px rgba(74,222,128,0.3)"/>' +
+      '<p style="color:#4ade80;font-family:monospace;font-size:12px;margin:0">Right click and save the image to share it!</p>' +
+      '</body></html>'
     );
   }
 }
 
 function shareResultCard() {
-  generateShareCard(myName, score1, correctAnswers, bluffsDetected, odBonusEarned, totalQ);
+  const iWon = score1 >= score2;
+  const pos  = mode === 'multi' ? (iWon ? 1 : 2) : 1;
+  const oppN = (typeof MP !== 'undefined' && MP.opponentName) || null;
+  generateShareCard(myName, score1, correctAnswers, bluffsDetected, odBonusEarned, totalQ, pos, mode, oppN, score2);
 }
 
 
@@ -889,7 +914,7 @@ function showResults() {
 
   const rows=mode==='solo'
     ?[{name:myName,xp:score1,color:'var(--em)',detail:correctAnswers+' CORRECT · '+bluffsDetected+' BLUFFS'+(odBonusEarned?' · OD +50':'')}]
-    :[{name:myName,xp:score1,color:'var(--em)',detail:'YOU'},{name:'OPPONENT',xp:score2,color:'var(--am)',detail:'OPPONENT'}].sort((a,b)=>b.xp-a.xp);
+    :[{name:myName,xp:score1,color:'var(--em)',detail:'YOU'},{name:(typeof MP!=='undefined'&&MP.opponentName)||'OPPONENT',xp:score2,color:'var(--am)',detail:'OPPONENT'}].sort((a,b)=>b.xp-a.xp);
 
   const rc=document.getElementById('results-rows'); rc.innerHTML='';
   rows.forEach((pl,i)=>{
