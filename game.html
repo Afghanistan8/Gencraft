@@ -9,7 +9,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-  <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
 </head>
 <body>
 
@@ -348,45 +347,29 @@
       <div class="px-title" style="font-size:12px">WAITING ROOM</div>
     </div>
     <div class="forge-panel waiting-center">
-      <div style="font-family:var(--px);font-size:7px;color:var(--txt3);letter-spacing:.1em">ROOM CODE — SHARE WITH OPPONENT</div>
+
+      <!-- Room code display -->
+      <div style="font-family:var(--px);font-size:7px;color:var(--txt3);letter-spacing:.1em">ROOM CODE — SHARE WITH OPPONENTS</div>
       <div class="room-display-code" id="room-display">———</div>
 
-      <!-- Player count pill — shown to host -->
-      <div id="player-count-wrap" style="display:none;flex-direction:column;align-items:center;gap:6px">
-        <div style="font-family:var(--px);font-size:7px;color:var(--txt3);letter-spacing:.1em">VALIDATORS IN ROOM</div>
-        <div style="display:flex;gap:12px;justify-content:center;align-items:center">
-          <div id="slot-p1" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:2px solid var(--em);background:rgba(74,222,128,0.07)">
-            <div style="width:8px;height:8px;background:var(--em);border-radius:50%"></div>
-            <span id="slot-p1-name" style="font-family:var(--px);font-size:7px;color:var(--em)">YOU</span>
-          </div>
-          <div style="font-family:var(--px);font-size:9px;color:var(--txt3)">VS</div>
-          <div id="slot-p2" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border:2px solid var(--bdr2);background:rgba(255,255,255,0.02)">
-            <div style="width:8px;height:8px;border:2px solid var(--txt3);border-radius:50%"></div>
-            <span id="slot-p2-name" style="font-family:var(--px);font-size:7px;color:var(--txt3)">WAITING...</span>
-          </div>
-        </div>
-        <!-- START button — only enabled when opponent joins -->
-        <button id="host-start-btn" class="btn em" onclick="hostStartGame()" disabled
-          style="margin-top:4px;opacity:0.4;cursor:not-allowed;max-width:300px">
-          ⚔ START GAME
-        </button>
-        <div id="host-start-hint" style="font-family:var(--mn);font-size:10px;color:var(--txt3)">
-          Waiting for opponent to join before you can start…
-        </div>
+      <!-- Status message -->
+      <div class="wait-indicator">
+        <div class="wait-dot"></div>
+        <div style="font-family:var(--mn);font-size:11px;color:var(--txt2)" id="wait-msg">Connecting...</div>
       </div>
 
-      <!-- Status / spinner while connecting or for Player 2 -->
-      <div id="wait-status-wrap" style="display:flex;flex-direction:column;align-items:center;gap:8px">
-        <div class="wait-indicator">
-          <div class="wait-dot"></div>
-          <div style="font-family:var(--mn);font-size:11px;color:var(--txt2)" id="wait-msg">Connecting...</div>
-        </div>
-        <div style="font-family:var(--mn);font-size:10px;color:var(--txt3);line-height:1.7;text-align:center">
-          Your opponent opens GENCRAFT on their device,<br>selects Multiplayer Forge, and enters the code above.
-        </div>
+      <!-- Player list — injected by JS -->
+      <div id="mp-player-list" style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:320px;"></div>
+
+      <!-- Instruction text -->
+      <div style="font-family:var(--mn);font-size:10px;color:var(--txt3);line-height:1.8;text-align:center;max-width:300px">
+        Share the code above.<br>
+        <span style="color:var(--em)">Host starts the game</span> when everyone is in.
       </div>
 
-      <button class="btn ghost" style="max-width:300px" onclick="showPage('multi-setup')">← BACK</button>
+      <!-- START button injected here by JS for host only -->
+
+      <button class="btn ghost" style="max-width:300px;margin-top:4px" onclick="showPage('multi-setup')">← BACK</button>
     </div>
   </div>
 
