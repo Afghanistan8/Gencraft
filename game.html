@@ -353,26 +353,37 @@
       <div style="font-family:var(--px);font-size:7px;color:var(--txt3);letter-spacing:.1em">ROOM CODE — SHARE WITH OPPONENTS</div>
       <div class="room-display-code" id="room-display">———</div>
 
+      <!-- Player count badge -->
+      <div style="display:flex;align-items:center;gap:8px;justify-content:center">
+        <div style="width:8px;height:8px;background:var(--em);border-radius:50%;animation:pulse 1.2s infinite"></div>
+        <div style="font-family:var(--px);font-size:7px;color:var(--txt2);letter-spacing:.08em">
+          <span id="mp-count-num">...</span> VALIDATOR(S) IN ROOM
+        </div>
+      </div>
+
       <!-- Status spinner + message -->
       <div class="wait-indicator">
         <div class="wait-dot"></div>
         <div style="font-family:var(--mn);font-size:11px;color:var(--txt2)" id="wait-msg">Connecting...</div>
       </div>
 
-      <!-- Player slots — JS fills innerHTML, never removes this element -->
+      <!-- Player slots — JS updates innerHTML only, never removes -->
       <div id="mp-player-list" style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:320px;"></div>
 
-      <!-- HOST START button container — always in DOM, shown/hidden by JS -->
-      <div id="mp-start-wrap" style="display:none;width:100%;max-width:300px;">
-        <button class="btn em" style="width:100%;animation:pulse 1s ease-in-out infinite alternate;" onclick="hostStartGame()">
+      <!-- HOST START button + hint — both inside mp-start-wrap; shown/hidden by JS -->
+      <div id="mp-start-wrap" style="display:none;width:100%;max-width:300px;display:flex;flex-direction:column;gap:6px;align-items:center;">
+        <button id="mp-start-btn" class="btn em" onclick="hostStartGame()"
+          style="width:100%;opacity:0.35;cursor:not-allowed;" disabled>
           ⛏ START THE GAME
         </button>
+        <div id="mp-start-hint" style="font-family:var(--mn);font-size:10px;color:var(--txt3);text-align:center">
+          Waiting for at least 1 more player to join...
+        </div>
       </div>
 
-      <!-- Instruction text -->
+      <!-- Instruction text (non-host sees this) -->
       <div style="font-family:var(--mn);font-size:10px;color:var(--txt3);line-height:1.8;text-align:center;max-width:300px">
-        Share the code above.<br>
-        <span style="color:var(--em)">Host starts the game</span> when everyone is in.
+        Share the code above. <span style="color:var(--em)">Host starts the game</span> when ready.
       </div>
 
       <button class="btn ghost" style="max-width:300px;margin-top:4px" onclick="showPage('multi-setup')">← BACK</button>
