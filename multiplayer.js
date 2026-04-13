@@ -1,8 +1,12 @@
 /* ════════════════════════════════════════
    GENCRAFT — MULTIPLAYER.JS  (Supabase Broadcast)
 
-   Using Supabase Realtime 'Broadcast' for instant
-   websockets without needing Ably or game_event tables.
+   Flow:
+   • Player 1 creates room → sees waiting room with START button
+   • Player 2 joins with code → announces via broadcast
+   • Player 1 sees opponent join, START button becomes active
+   • Player 1 clicks START → broadcasts game_confirmed
+   • Both players launch simultaneously
 ════════════════════════════════════════ */
 
 const SUPABASE_URL = 'https://xsmwnohozgwtliauvees.supabase.co';
@@ -13,20 +17,21 @@ const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 ════════════════════════════════════════ */
 
 const MP = {
-  roomId:            null,
-  myPlayerId:        null,
-  myName:            null,
-  opponentName:      null,
-  questionSeed:      null,
-  channel:           null, // Supabase Broadcast channel
-  isConnected:       false,
-  gameStarted:       false,
+  roomId:             null,
+  myPlayerId:         null,   // 1 = host, 2 = joiner
+  myName:             null,
+  opponentName:       null,
+  questionSeed:       null,
+  channel:            null,   // Supabase Broadcast channel
+  isConnected:        false,
+  gameStarted:        false,
+  opponentReady:      false,  // true once P2 has joined (P1 perspective)
 
-  // These track whether both players have finished
-  iFinished:         false,
-  opponentFinished:  false,
-  myFinalScore:      null,
-  opponentFinalScore:null,
+  // End-of-game sync
+  iFinished:          false,
+  opponentFinished:   false,
+  myFinalScore:       null,
+  opponentFinalScore: null,
 };
 
 /* ════════════════════════════════════════
@@ -45,7 +50,7 @@ function getSupabase() {
 }
 
 /* ════════════════════════════════════════
-   SEEDED QUESTIONS — identical order both players
+   SEEDED QUESTIONS — identical order for both players
 ════════════════════════════════════════ */
 
 function seededRandom(seed) {
@@ -88,8 +93,6 @@ async function createRoomInDB(playerName) {
   const questionSeed = Math.floor(Math.random() * 1000000);
 
   if (db) {
-    // We only rely on 'id'. If your table has player1_name, we add it. 
-    // We removed 'host_name' permanently.
     await db.from('rooms').insert({
       id:            roomId,
       player1_name:  playerName,
@@ -123,42 +126,33 @@ function connectToRoom(roomId, onMessage) {
   const db = getSupabase();
   if (!db) return;
 
-  showMultiStatus('Connecting...');
+  showMultiStatus('Connecting to room...');
 
-  // 1. Create a Supabase channel for this room
   const channel = db.channel('gencraft-' + roomId);
   MP.channel = channel;
 
-  // 2. Listen for Broadcast messages coming from the opponent
-  channel.on(
-    'broadcast',
-    { event: '*' },
-    (payload) => {
-      onMessage(payload.event, payload.payload);
-    }
-  );
+  channel.on('broadcast', { event: '*' }, (payload) => {
+    onMessage(payload.event, payload.payload);
+  });
 
-  // 3. Subscribe to the channel
   channel.subscribe((status) => {
     if (status === 'SUBSCRIBED') {
       MP.isConnected = true;
 
-      // If Player 2, announce joining
-      if (MP.myPlayerId === 2) {
-        showMultiStatus('Connected! Announcing to host...');
+      if (MP.myPlayerId === 1) {
+        // Host: switch waiting room into "lobby" mode
+        showHostLobby();
+      } else {
+        // Joiner: announce presence to host
+        showMultiStatus('Connected! Notifying host...');
         publishToChannel('player_joined', {
           name:         MP.myName,
           questionSeed: MP.questionSeed,
         });
-
-        // Fallback in case game_confirmed never arrives
-        setTimeout(() => {
-          if (!MP.gameStarted) {
-            MP.gameStarted = true;
-            launchGame();
-          }
-        }, 8000);
+        // Show a waiting message — game starts when host clicks START
+        showMultiStatus('Joined! Waiting for host to start the game...');
       }
+
     } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
       showMultiError('Connection failed. Please refresh.');
     }
@@ -175,9 +169,88 @@ function publishToChannel(eventName, data) {
 }
 
 /* ════════════════════════════════════════
+   HOST LOBBY UI
+   Shows the slot panel and START button
+════════════════════════════════════════ */
+
+function showHostLobby() {
+  // Hide the spinner/instruction section, show the lobby slots for host
+  const statusWrap = document.getElementById('wait-status-wrap');
+  if (statusWrap) statusWrap.style.display = 'none';
+
+  const cntWrap = document.getElementById('player-count-wrap');
+  if (cntWrap) cntWrap.style.display = 'flex';
+
+  // Personalise the host slot
+  const p1slot = document.getElementById('slot-p1-name');
+  if (p1slot) p1slot.textContent = MP.myName || 'YOU';
+
+  showMultiStatus('Room ready — share the code above!');
+}
+
+function onOpponentJoined(opponentName) {
+  MP.opponentReady = true;
+  MP.opponentName  = opponentName || 'OPPONENT';
+
+  // Update slot P2
+  const p2slot = document.getElementById('slot-p2');
+  const p2name = document.getElementById('slot-p2-name');
+  if (p2slot) {
+    p2slot.style.border     = '2px solid var(--am)';
+    p2slot.style.background = 'rgba(251,191,36,0.07)';
+    p2slot.querySelector('div').style.background = 'var(--am)';
+  }
+  if (p2name) {
+    p2name.textContent = opponentName;
+    p2name.style.color = 'var(--am)';
+  }
+
+  // Unlock the START button
+  const btn  = document.getElementById('host-start-btn');
+  const hint = document.getElementById('host-start-hint');
+  if (btn) {
+    btn.disabled         = false;
+    btn.style.opacity    = '1';
+    btn.style.cursor     = 'pointer';
+  }
+  if (hint) {
+    hint.textContent  = opponentName + ' has joined! Click START GAME when ready.';
+    hint.style.color  = 'var(--em)';
+  }
+
+  showMultiStatus(opponentName + ' joined the room!');
+}
+
+/* ════════════════════════════════════════
+   HOST STARTS THE GAME
+════════════════════════════════════════ */
+
+function hostStartGame() {
+  if (!MP.opponentReady || MP.gameStarted) return;
+  MP.gameStarted = true;
+
+  // Broadcast confirmed game start to Player 2
+  publishToChannel('game_confirmed', {
+    seed:        MP.questionSeed,
+    player1Name: MP.myName,
+  });
+
+  // Count down and launch for Player 1
+  let count = 3;
+  showMultiStatus('Starting in 3...');
+  const iv = setInterval(() => {
+    count--;
+    if (count > 0) {
+      showMultiStatus('Starting in ' + count + '...');
+    } else {
+      clearInterval(iv);
+      launchGame();
+    }
+  }, 1000);
+}
+
+/* ════════════════════════════════════════
    MESSAGE HANDLER
-   This is the central place that processes
-   every message from the opponent
 ════════════════════════════════════════ */
 
 function handleMessage(event, data) {
@@ -185,17 +258,18 @@ function handleMessage(event, data) {
   /* ── Player 2 joined — Player 1 receives ── */
   if (event === 'player_joined') {
     if (MP.myPlayerId !== 1) return;
-    MP.opponentName = data.name || 'OPPONENT';
-    startBothPlayers(data.name, data.questionSeed || MP.questionSeed);
+    onOpponentJoined(data.name || 'OPPONENT');
   }
 
   /* ── Game confirmed — Player 2 receives ── */
   if (event === 'game_confirmed') {
     if (MP.myPlayerId !== 2) return;
     if (data.player1Name) MP.opponentName = data.player1Name;
+    if (data.seed)        MP.questionSeed = data.seed;
     if (!MP.gameStarted) {
       MP.gameStarted = true;
-      launchGame();
+      showMultiStatus('Host started the game! Loading...');
+      setTimeout(() => launchGame(), 800);
     }
   }
 
@@ -203,7 +277,6 @@ function handleMessage(event, data) {
   if (event === 'answer') {
     score2  = data.new_score;
     streak2 = data.streak || 0;
-    // Update opponent name in HUD if provided
     if (data.player_name) {
       MP.opponentName = data.player_name;
       const p2el = document.getElementById('p2name');
@@ -217,20 +290,13 @@ function handleMessage(event, data) {
     MP.opponentFinished   = true;
     MP.opponentFinalScore = data.final_score;
     if (data.player_name) MP.opponentName = data.player_name;
-
-    // Update score2 with the final confirmed score
     score2 = data.final_score;
     updateHUD();
-
-    // If I already finished, we can now show results
-    if (MP.iFinished) {
-      showFinalResults();
-    }
+    if (MP.iFinished) showFinalResults();
   }
 
   /* ── Opponent disconnected ── */
   if (event === 'disconnect') {
-    // If we haven't shown results yet, show them now
     if (MP.iFinished) {
       showFinalResults();
     } else {
@@ -247,8 +313,8 @@ function handleMessage(event, data) {
 ════════════════════════════════════════ */
 
 function notifyIFinished() {
-  MP.iFinished      = true;
-  MP.myFinalScore   = score1;
+  MP.iFinished    = true;
+  MP.myFinalScore = score1;
 
   publishToChannel('game_finished', {
     final_score: score1,
@@ -293,6 +359,7 @@ function showWaitingForOpponent() {
       '<div style="font-family:var(--mn);font-size:11px;color:var(--txt2)">Waiting for ' + (MP.opponentName || 'opponent') + ' to finish...</div>' +
     '</div>';
 
+  // 30s timeout in case opponent never broadcasts
   setTimeout(() => {
     if (!MP.opponentFinished) {
       MP.opponentFinished   = true;
@@ -306,42 +373,15 @@ function showFinalResults() {
   const overlay = document.getElementById('waiting-for-opponent');
   if (overlay) overlay.style.display = 'none';
 
-  if (MP.opponentFinalScore !== null) {
-    score2 = MP.opponentFinalScore;
-  }
+  if (MP.opponentFinalScore !== null) score2 = MP.opponentFinalScore;
 
   showResults();
-
   setTimeout(() => cleanupConnection(), 5000);
 }
 
 /* ════════════════════════════════════════
    GAME LAUNCH
 ════════════════════════════════════════ */
-
-function startBothPlayers(opponentName, seed) {
-  if (MP.gameStarted) return;
-  MP.gameStarted  = true;
-  MP.questionSeed = seed;
-
-  showMultiStatus((opponentName || 'OPPONENT') + ' joined! Starting in 3...');
-
-  publishToChannel('game_confirmed', {
-    seed,
-    player1Name: MP.myName,
-  });
-
-  let count = 3;
-  const iv = setInterval(() => {
-    count--;
-    if (count > 0) {
-      showMultiStatus('Starting in ' + count + '...');
-    } else {
-      clearInterval(iv);
-      launchGame();
-    }
-  }, 1000);
-}
 
 function launchGame() {
   mode      = 'multi';
@@ -363,7 +403,6 @@ window.joinOrCreate = async function () {
   const playerName = (document.getElementById('pname-input').value.trim() || 'MINER').toUpperCase();
   const codeInput  = document.getElementById('room-input').value.trim().toUpperCase();
 
-  showMultiStatus('Initialising...');
   showPage('waiting');
 
   if (codeInput) {
@@ -386,7 +425,8 @@ window.joinOrCreate = async function () {
           .eq('id', codeInput);
       }
     } else {
-      MP.questionSeed = Math.floor(Math.random() * 1000000);
+      showMultiError('Room "' + codeInput + '" not found. Check the code and try again.');
+      return;
     }
 
     connectToRoom(codeInput, handleMessage);
@@ -396,17 +436,23 @@ window.joinOrCreate = async function () {
     const result = await createRoomInDB(playerName);
 
     document.getElementById('room-display').textContent = result.roomId;
-    showMultiStatus('Room ready. Share this code. Waiting for opponent...');
-
     connectToRoom(result.roomId, handleMessage);
   }
 };
+
+/* ════════════════════════════════════════
+   HOST START GAME — exposed globally
+════════════════════════════════════════ */
+
+window.hostStartGame = hostStartGame;
 
 /* ════════════════════════════════════════
    OVERRIDE simulateOpponentAnswer
 ════════════════════════════════════════ */
 
 window.simulateOpponentAnswer = function(correct) {
+  // In real multiplayer we get actual scores via broadcast
+  // In solo mode simulate the opponent
   if (mode !== 'multi') {
     score2  = Math.max(0, score2 + (correct ? 65 + Math.floor(Math.random() * 20) : -20));
     streak2 = correct ? streak2 + 1 : 0;
@@ -502,11 +548,12 @@ function cleanupConnection() {
     const db = getSupabase();
     if (db) db.from('rooms').update({ status: 'finished' }).eq('id', MP.roomId);
   }
-  MP.isConnected       = false;
-  MP.gameStarted       = false;
-  MP.iFinished         = false;
-  MP.opponentFinished  = false;
-  MP.myFinalScore      = null;
+  MP.isConnected        = false;
+  MP.gameStarted        = false;
+  MP.opponentReady      = false;
+  MP.iFinished          = false;
+  MP.opponentFinished   = false;
+  MP.myFinalScore       = null;
   MP.opponentFinalScore = null;
 }
 
