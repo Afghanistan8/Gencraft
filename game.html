@@ -10,7 +10,6 @@
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/genlayer-js@latest/dist/index.umd.js"></script>
 </head>
 <body>
 
@@ -39,7 +38,7 @@
     </div>
     <div class="tb-right">
       <div class="tb-xp-pill" id="tb-xp-pill">200 XP</div>
-      <button id="wallet-connect-btn" onclick="connectWallet()" style="font-family:var(--px);font-size:6px;padding:4px 10px;border:2px solid var(--bdr2);background:transparent;color:var(--txt2);cursor:pointer;letter-spacing:.06em;">CONNECT WALLET</button>
+      <button id="wallet-connect-btn" onclick="connectWallet()" style="font-family:var(--px);font-size:6px;padding:5px 10px;border:2px solid var(--am);background:rgba(251,191,36,0.05);color:var(--am);cursor:pointer;letter-spacing:.06em;transition:all .2s;white-space:nowrap;">CONNECT WALLET</button>
       <div class="tb-net"><div class="tb-dot"></div><span>ONLINE</span></div>
     </div>
   </div>
@@ -513,12 +512,8 @@
 
 <!-- GenLayer status bar -->
 <div id="gl-status" style="display:none;position:fixed;bottom:0;left:0;right:0;padding:8px 16px;font-family:var(--mn);font-size:11px;background:var(--bg2);border-top:1px solid var(--bdr2);text-align:center;z-index:9998;"></div>
-
-<!-- 1. Game Logic -->
-<script src="game.js"></script>
-<!-- 2. Web3 / Genlayer integration -->
 <script src="genlayer.js"></script>
-<!-- 3. Multiplayer overrides / function patching -->
 <script src="multiplayer.js"></script>
+<script src="game.js"></script>
 </body>
 </html>

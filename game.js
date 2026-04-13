@@ -908,9 +908,10 @@ function showResults() {
   if(mi>=0) lb[mi].isMe=true;
   saveLB(lb); updateHotbar(); showPage('results');
 
-  const iWon=score1>=score2;
-  document.getElementById('res-title').textContent=mode==='solo'?'MINE COMPLETE':iWon?'VICTORY!':'DEFEATED';
-  document.getElementById('res-sub').textContent=mode==='solo'?'// FINAL VAULT: '+score1+' XP — '+correctAnswers+'/'+totalQ+' CORRECT //':(iWon?'// WELL CRAFTED, '+myName+' //':'// OPPONENT WINS //');
+  const iWon=score1>score2;
+  const isDraw=score1===score2&&mode==='multi';
+  document.getElementById('res-title').textContent=mode==='solo'?'MINE COMPLETE':isDraw?'DRAW!':iWon?'VICTORY!':'DEFEATED';
+  document.getElementById('res-sub').textContent=mode==='solo'?'// FINAL VAULT: '+score1+' XP — '+correctAnswers+'/'+totalQ+' CORRECT //':isDraw?'// EQUAL SCORES — HONOURABLE DRAW //':iWon?'// WELL CRAFTED, '+myName+' //':'// OPPONENT WINS //';
 
   const rows=mode==='solo'
     ?[{name:myName,xp:score1,color:'var(--em)',detail:correctAnswers+' CORRECT · '+bluffsDetected+' BLUFFS'+(odBonusEarned?' · OD +50':'')}]
@@ -922,7 +923,7 @@ function showResults() {
     d.innerHTML='<div class="lb-rank">'+(i+1)+'</div>'+
       '<div class="lb-avatar" style="border-color:'+pl.color+';color:'+pl.color+'">'+pl.name[0]+'</div>'+
       '<div class="lb-info"><div class="lb-name" style="color:'+pl.color+'">'+pl.name+'</div><div class="lb-meta">'+pl.detail+'</div></div>'+
-      '<div class="lb-score"><div class="lb-xp">'+pl.xp+' XP</div>'+(i===0&&mode==='multi'?'<div class="lb-badge gold">WINNER</div>':'')+'</div>';
+      '<div class="lb-score"><div class="lb-xp">'+pl.xp+' XP</div>'+(mode==='multi'&&i===0&&rows.length>1&&pl.xp>rows[1].xp?'<div class="lb-badge gold">WINNER</div>':mode==='multi'&&i===0&&rows.length>1&&pl.xp===rows[1].xp?'<div class="lb-badge" style="border-color:var(--di);color:var(--di)">DRAW</div>':'')+'</div>';
     rc.appendChild(d);
   });
 
