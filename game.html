@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GENCRAFT — Knowledge Edition</title>
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+  <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/genlayer-js@latest/dist/index.umd.js"></script>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ══════════════════════════════════════
+       TOPBAR
+  ═══════════════════════════════════════ -->
+  <div id="topbar">
+    <div class="tb-left" onclick="showPage('splash')">
+      <div class="tb-logo">
+        <div class="tbl-cell"></div><div class="tbl-cell"></div><div class="tbl-cell"></div>
+        <div class="tbl-cell"></div><div class="tbl-cell"></div><div class="tbl-cell"></div>
+        <div class="tbl-cell"></div><div class="tbl-cell"></div><div class="tbl-cell"></div>
+      </div>
+      <div>
+        <div class="tb-brand">GENCRAFT</div>
+        <div class="tb-ver">v1.0 · KNOWLEDGE EDITION</div>
+      </div>
+    </div>
+    <div class="tb-nav" id="tb-nav">
+      <button class="tb-nav-btn active" data-page="splash"        onclick="showPage('splash')">HOME</button>
+      <button class="tb-nav-btn"        data-page="how-to-play"   onclick="showPage('how-to-play')">HOW TO PLAY</button>
+      <button class="tb-nav-btn"        data-page="leaderboard"   onclick="showPage('leaderboard')">LEADERBOARD</button>
+      <button class="tb-nav-btn"        data-page="stats"         onclick="showPage('stats')">MY STATS</button>
+    </div>
+    <div class="tb-right">
+      <div class="tb-xp-pill" id="tb-xp-pill">200 XP</div>
+      <button id="wallet-connect-btn" onclick="connectWallet()" style="font-family:var(--px);font-size:6px;padding:4px 10px;border:2px solid var(--bdr2);background:transparent;color:var(--txt2);cursor:pointer;letter-spacing:.06em;">CONNECT WALLET</button>
+      <div class="tb-net"><div class="tb-dot"></div><span>ONLINE</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       HOTBAR
+  ═══════════════════════════════════════ -->
+  <div id="hotbar">
+    <div class="hslot active" title="Questions left">
+      <span class="hs-icon">📦</span>
+      <span class="hs-count" id="hs-q">20</span>
+      <span class="hs-label">Q</span>
+    </div>
+    <div class="hslot" title="XP Vault">
+      <span class="hs-icon">💎</span>
+      <span class="hs-count" id="hs-xp">200</span>
+      <span class="hs-label">XP</span>
+    </div>
+    <div class="hslot" title="Streak">
+      <span class="hs-icon">🔥</span>
+      <span class="hs-count" id="hs-st">0</span>
+      <span class="hs-label">STR</span>
+    </div>
+    <div class="hslot" title="Bluffs caught">
+      <span class="hs-icon">🕵️</span>
+      <span class="hs-count" id="hs-bl">0</span>
+      <span class="hs-label">BLF</span>
+    </div>
+    <div class="hbar-sep"></div>
+    <div class="hslot" title="Games played">
+      <span class="hs-icon">⚔</span>
+      <span class="hs-count" id="hs-gp">0</span>
+      <span class="hs-label">GAMES</span>
+    </div>
+    <div class="hslot" title="Best score">
+      <span class="hs-icon">🏆</span>
+      <span class="hs-count" id="hs-bs">0</span>
+      <span class="hs-label">BEST</span>
+    </div>
+    <div class="hslot" title="Rank">
+      <span class="hs-icon">⛏</span>
+      <span class="hs-count" id="hs-rk">—</span>
+      <span class="hs-label">RANK</span>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: SPLASH / HOME
+  ═══════════════════════════════════════ -->
+  <div class="page active" id="page-splash">
+    <div class="splash-center">
+      <div class="splash-block">
+        <div class="sb"></div><div class="sb"></div><div class="sb"></div><div class="sb"></div>
+        <div class="sb"></div><div class="sb"></div><div class="sb"></div><div class="sb"></div>
+        <div class="sb"></div><div class="sb"></div><div class="sb"></div><div class="sb"></div>
+        <div class="sb"></div><div class="sb"></div><div class="sb"></div><div class="sb"></div>
+      </div>
+      <div class="splash-title">GENCRAFT</div>
+      <div class="splash-tagline">// MINE KNOWLEDGE. FORGE CONSENSUS. BUILD YOUR LEGACY. //</div>
+      <div class="splash-tags">
+        <span class="tag em">62 QUESTIONS</span>
+        <span class="tag am">XP STAKING</span>
+        <span class="tag rs">BLUFF ROUNDS</span>
+        <span class="tag di">OD FINALE +50 XP</span>
+        <span class="tag go">STREAK BONUS</span>
+      </div>
+      <div class="splash-btns">
+        <button class="btn em" onclick="initSolo()">⛏ SOLO MINE</button>
+        <button class="btn am" onclick="initMulti()">⚔ MULTIPLAYER FORGE</button>
+        <div class="splash-divider"><span>OR</span></div>
+        <button class="btn ghost" onclick="showPage('how-to-play')">📖 HOW TO PLAY</button>
+        <button class="btn ghost" onclick="showPage('leaderboard')">🏆 LEADERBOARD</button>
+      </div>
+      <div class="divider" style="width:100%;max-width:500px"></div>
+      <div class="splash-stats">
+        <div class="stat-card em" style="padding:12px">
+          <div class="sc-val" id="splash-games">0</div>
+          <div class="sc-lbl">GAMES PLAYED</div>
+        </div>
+        <div class="stat-card go" style="padding:12px">
+          <div class="sc-val" id="splash-best">0</div>
+          <div class="sc-lbl">BEST SCORE</div>
+        </div>
+        <div class="stat-card di" style="padding:12px">
+          <div class="sc-val" id="splash-rank">—</div>
+          <div class="sc-lbl">CURRENT RANK</div>
+        </div>
+      </div>
+      <div class="version-badge">GENCRAFT v1.0 · BUILT ON GENLAYER · MIT LICENSED</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: HOW TO PLAY
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-how-to-play">
+    <div class="panel stone-tex" style="padding:18px;text-align:center">
+      <div class="px-title" style="font-size:14px">HOW TO PLAY</div>
+      <div class="px-sub" style="margin-top:4px">// MASTER THE CRAFT — BECOME A VALIDATOR //</div>
+    </div>
+
+    <div class="section-hd">GAME FLOW — 5 STEPS</div>
+    <div class="steps-list">
+      <div class="htp-step s1">
+        <div class="htp-num">01</div>
+        <div class="htp-content">
+          <h3>CHOOSE YOUR MODE</h3>
+          <p>Select Solo Mine to play alone and learn GenLayer at your own pace, or Multiplayer Forge to challenge another validator in real time. Both modes share the same 62-question pool drawn randomly each session so every run is different.</p>
+        </div>
+      </div>
+      <div class="htp-step s2">
+        <div class="htp-num">02</div>
+        <div class="htp-content">
+          <h3>FORGE YOUR STAKE</h3>
+          <p>Before each question loads you choose how much XP to stake from your vault — 10, 25, 50 or up to 100 XP. Correct answer = double your stake plus a time bonus. Wrong answer = lose your stake. You can skip staking to play it safe.</p>
+        </div>
+      </div>
+      <div class="htp-step s3">
+        <div class="htp-num">03</div>
+        <div class="htp-content">
+          <h3>BLUFF ROUNDS</h3>
+          <p>Every 5th question is a Bluff Round flagged with a red border. One of the four answers is deliberately fabricated. Catch it = double stake plus 40 XP bonus. Miss it = lose your stake plus a penalty. Mirrors how GenLayer Intelligent Contracts detect false on-chain data.</p>
+        </div>
+      </div>
+      <div class="htp-step s4">
+        <div class="htp-num">04</div>
+        <div class="htp-content">
+          <h3>INTELLIGENT CONTRACT LOG</h3>
+          <p>After each answer a contract execution animation plays — simulating a GenLayer Intelligent Contract settling the XP transaction on-chain. The log shows real contract language: validation, equivalence check, escrow settlement.</p>
+        </div>
+      </div>
+      <div class="htp-step s5">
+        <div class="htp-num">05</div>
+        <div class="htp-content">
+          <h3>OPTIMISTIC DEMOCRACY FINALE</h3>
+          <p>After question 20 five AI validators deliberate on a GenLayer claim and reveal their votes one by one. If validators split 3–2 an appeal can be invoked — expanding the set to 10 validators, exactly as GenLayer's real mechanism works. Vote with the majority and earn +50 XP.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-hd" style="margin-top:6px">BLOCKCHAIN ITEM GUIDE</div>
+    <div class="item-guide">
+      <div class="item-card">
+        <div class="ic-title good">CATCH THESE ✓</div>
+        <div class="ic-items">
+          <div class="ic-item"><span class="ic-badge good">BASICS</span>Core GenLayer facts</div>
+          <div class="ic-item"><span class="ic-badge good">CONSEN</span>Consensus mechanics</div>
+          <div class="ic-item"><span class="ic-badge good">IC</span>Intelligent Contracts</div>
+          <div class="ic-item"><span class="ic-badge good">USE</span>Real-world use cases</div>
+          <div class="ic-item"><span class="ic-badge good">TECH</span>Technical architecture</div>
+        </div>
+      </div>
+      <div class="item-card">
+        <div class="ic-title bad">DODGE THESE ✗</div>
+        <div class="ic-items">
+          <div class="ic-item"><span class="ic-badge bad">BLUFF</span>Fabricated answers</div>
+          <div class="ic-item"><span class="ic-badge bad">TRAP</span>Plausible-sounding lies</div>
+          <div class="ic-item"><span class="ic-badge bad">MIXED</span>Partially true answers</div>
+          <div class="ic-item"><span class="ic-badge bad">FAKE</span>Invented facts</div>
+          <div class="ic-item"><span class="ic-badge bad">TIMER</span>Running out of time</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-hd">SCORING SYSTEM</div>
+    <div class="scoring-table">
+      <div class="score-row"><span class="sr-action">Correct answer (no stake)</span><span class="sr-xp pos">+20 XP</span></div>
+      <div class="score-row"><span class="sr-action">Correct answer + full stake</span><span class="sr-xp pos">+20 + (2× stake) XP</span></div>
+      <div class="score-row"><span class="sr-action">Time bonus (fast answer)</span><span class="sr-xp pos">+0 to +15 XP</span></div>
+      <div class="score-row"><span class="sr-action">Streak bonus (3+ correct)</span><span class="sr-xp bonus">+10 to +40 XP</span></div>
+      <div class="score-row"><span class="sr-action">Bluff caught</span><span class="sr-xp bonus">+40 + (2× stake) XP</span></div>
+      <div class="score-row"><span class="sr-action">Wrong answer</span><span class="sr-xp neg">−10 − stake XP</span></div>
+      <div class="score-row"><span class="sr-action">Bluff missed</span><span class="sr-xp neg">−15 − stake XP</span></div>
+      <div class="score-row"><span class="sr-action">Time expired</span><span class="sr-xp neg">−stake XP</span></div>
+      <div class="score-row"><span class="sr-action">OD finale — correct vote</span><span class="sr-xp pos">+50 XP BONUS</span></div>
+    </div>
+
+    <div class="section-hd">VALIDATOR RANKS</div>
+    <div class="scoring-table">
+      <div class="score-row"><span class="sr-action">0 – 200 XP</span><span class="sr-xp" style="color:var(--txt3)">⛏ NODE LEARNER</span></div>
+      <div class="score-row"><span class="sr-action">200 – 400 XP</span><span class="sr-xp" style="color:var(--di)">◆ JUNIOR VALIDATOR</span></div>
+      <div class="score-row"><span class="sr-action">400 – 650 XP</span><span class="sr-xp" style="color:var(--em)">◈ SENIOR VALIDATOR</span></div>
+      <div class="score-row"><span class="sr-action">650 – 900 XP</span><span class="sr-xp" style="color:var(--am)">⚡ CONSENSUS MASTER</span></div>
+      <div class="score-row"><span class="sr-action">900+ XP</span><span class="sr-xp" style="color:var(--go)">🏆 OPTIMISTIC ORACLE</span></div>
+    </div>
+
+    <button class="btn em" onclick="initSolo()">START MINING →</button>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: LEADERBOARD
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-leaderboard">
+    <div class="lb-hero panel stone-tex" style="padding:18px;text-align:center">
+      <div class="px-title" style="font-size:14px">LEADERBOARD</div>
+      <div class="px-sub" style="margin-top:4px">// TOP VALIDATORS ON THE NETWORK //</div>
+      <div style="display:flex;gap:6px;justify-content:center;margin-top:10px">
+        <span class="tag go">ALL TIME</span>
+        <span class="tag em">THIS WEEK</span>
+        <span class="tag di">TODAY</span>
+      </div>
+    </div>
+    <div class="my-rank-bar" id="my-rank-bar">
+      <span class="mr-label">YOUR CURRENT RANKING</span>
+      <span class="mr-rank" id="my-rank-display">—</span>
+      <span style="font-family:var(--px);font-size:7px;color:var(--txt3)">/ <span id="lb-total">0</span></span>
+    </div>
+    <div class="lb-filters">
+      <button class="lb-filter-btn active" onclick="filterLB('all',this)">ALL TIME</button>
+      <button class="lb-filter-btn" onclick="filterLB('week',this)">THIS WEEK</button>
+      <button class="lb-filter-btn" onclick="filterLB('today',this)">TODAY</button>
+      <button class="lb-filter-btn" onclick="filterLB('solo',this)">SOLO</button>
+      <button class="lb-filter-btn" onclick="filterLB('multi',this)">MULTIPLAYER</button>
+    </div>
+    <div class="lb-table" id="lb-table"></div>
+    <div style="font-family:var(--mn);font-size:10px;color:var(--txt3);text-align:center;padding:6px 0">
+      Scores saved locally. In production this connects to the GenLayer network.
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: MY STATS
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-stats">
+    <div class="panel stone-tex" style="padding:18px;text-align:center">
+      <div class="px-title" style="font-size:14px">MY STATS</div>
+      <div class="px-sub" style="margin-top:4px">// YOUR VALIDATOR RECORD //</div>
+    </div>
+    <div class="section-hd">VAULT OVERVIEW</div>
+    <div class="stat-grid-3">
+      <div class="stat-card em"><div class="sc-val" id="stat-total-xp">0</div><div class="sc-lbl">TOTAL XP EARNED</div></div>
+      <div class="stat-card go"><div class="sc-val" id="stat-best">0</div><div class="sc-lbl">BEST SINGLE RUN</div></div>
+      <div class="stat-card di"><div class="sc-val" id="stat-rank">—</div><div class="sc-lbl">VALIDATOR RANK</div></div>
+    </div>
+    <div class="stat-grid-2">
+      <div class="stat-card am"><div class="sc-val" id="stat-games">0</div><div class="sc-lbl">GAMES PLAYED</div><div class="sc-sub">Solo + Multiplayer</div></div>
+      <div class="stat-card rs"><div class="sc-val" id="stat-bluffs">0</div><div class="sc-lbl">BLUFFS CAUGHT</div><div class="sc-sub">Fabrications detected</div></div>
+      <div class="stat-card pu"><div class="sc-val" id="stat-streak">0</div><div class="sc-lbl">BEST STREAK</div><div class="sc-sub">Consecutive correct</div></div>
+      <div class="stat-card em"><div class="sc-val" id="stat-od">0</div><div class="sc-lbl">OD BONUSES</div><div class="sc-sub">+50 XP earned</div></div>
+    </div>
+    <div class="section-hd">ACCURACY BY CATEGORY</div>
+    <div class="cat-bars">
+      <div class="cat-row"><span class="cat-row-name">BASICS</span><div class="cat-bar-wrap"><div class="cat-bar-fill" id="cb-basics" style="width:0%"></div></div><span class="cat-pct" id="cp-basics">0%</span></div>
+      <div class="cat-row"><span class="cat-row-name">CONSENSUS</span><div class="cat-bar-wrap"><div class="cat-bar-fill" id="cb-consensus" style="width:0%;background:var(--di)"></div></div><span class="cat-pct" id="cp-consensus">0%</span></div>
+      <div class="cat-row"><span class="cat-row-name">INT. CONTRACTS</span><div class="cat-bar-wrap"><div class="cat-bar-fill" id="cb-ic" style="width:0%;background:var(--am)"></div></div><span class="cat-pct" id="cp-ic">0%</span></div>
+      <div class="cat-row"><span class="cat-row-name">USE CASES</span><div class="cat-bar-wrap"><div class="cat-bar-fill" id="cb-use" style="width:0%;background:var(--pu)"></div></div><span class="cat-pct" id="cp-use">0%</span></div>
+      <div class="cat-row"><span class="cat-row-name">TECHNICAL</span><div class="cat-bar-wrap"><div class="cat-bar-fill" id="cb-tech" style="width:0%;background:var(--rs)"></div></div><span class="cat-pct" id="cp-tech">0%</span></div>
+      <div class="cat-row"><span class="cat-row-name">BLUFF ROUNDS</span><div class="cat-bar-wrap"><div class="cat-bar-fill" id="cb-bluff" style="width:0%;background:var(--go)"></div></div><span class="cat-pct" id="cp-bluff">0%</span></div>
+    </div>
+    <div class="section-hd">ACHIEVEMENTS</div>
+    <div class="achievements-list">
+      <div class="achievement unlocked">
+        <div class="achievement-icon">⛏</div>
+        <div class="ach-info"><div class="ach-name" style="color:var(--em)">FIRST MINE</div><div class="ach-desc">Complete your first game</div></div>
+        <div class="ach-xp">+10 XP</div>
+      </div>
+      <div class="achievement locked" id="ach-streak">
+        <div class="achievement-icon">🔥</div>
+        <div class="ach-info"><div class="ach-name">ON FIRE</div><div class="ach-desc">Reach a 5× streak</div></div>
+        <div class="ach-xp">+25 XP</div>
+      </div>
+      <div class="achievement locked" id="ach-bluff">
+        <div class="achievement-icon">🕵️</div>
+        <div class="ach-info"><div class="ach-name">BLUFF DETECTOR</div><div class="ach-desc">Catch 5 bluffs total</div></div>
+        <div class="ach-xp">+30 XP</div>
+      </div>
+      <div class="achievement locked" id="ach-od">
+        <div class="achievement-icon">⚡</div>
+        <div class="ach-info"><div class="ach-name">CONSENSUS REACHED</div><div class="ach-desc">Win 3 OD finale votes</div></div>
+        <div class="ach-xp">+50 XP</div>
+      </div>
+      <div class="achievement locked" id="ach-oracle">
+        <div class="achievement-icon">🏆</div>
+        <div class="ach-info"><div class="ach-name">OPTIMISTIC ORACLE</div><div class="ach-desc">Score 900+ XP in a single run</div></div>
+        <div class="ach-xp">+100 XP</div>
+      </div>
+    </div>
+    <button class="btn em" style="margin-top:4px" onclick="initSolo()">START A NEW RUN →</button>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: MULTIPLAYER SETUP
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-multi-setup">
+    <div class="panel stone-tex" style="padding:16px;text-align:center">
+      <div class="px-title" style="font-size:12px">MULTIPLAYER FORGE</div>
+      <div class="px-sub" style="margin-top:4px">// CHALLENGE ANOTHER VALIDATOR //</div>
+    </div>
+    <div class="forge-panel">
+      <div class="forge-hrow"><div class="forge-title">YOUR CALLSIGN</div></div>
+      <input id="pname-input" placeholder="Enter your validator name..." maxlength="16" style="margin-bottom:12px" />
+      <div style="font-family:var(--px);font-size:7px;color:var(--txt3);letter-spacing:.08em;margin-bottom:6px">ROOM CODE (LEAVE BLANK TO CREATE NEW)</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        <input id="room-input" placeholder="e.g. GL4821" style="flex:1" />
+        <button class="btn ghost" style="width:auto;padding:9px 14px;font-size:7px" onclick="joinOrCreate()">JOIN</button>
+      </div>
+      <button class="btn em" onclick="joinOrCreate()">ENTER THE FORGE</button>
+    </div>
+    <button class="btn ghost" onclick="showPage('splash')">← BACK TO HOME</button>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: WAITING ROOM
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-waiting">
+    <div class="panel stone-tex" style="padding:16px;text-align:center">
+      <div class="px-title" style="font-size:12px">WAITING ROOM</div>
+    </div>
+    <div class="forge-panel waiting-center">
+      <div style="font-family:var(--px);font-size:7px;color:var(--txt3);letter-spacing:.1em">ROOM CODE — SHARE WITH OPPONENT</div>
+      <div class="room-display-code" id="room-display">———</div>
+      <div class="wait-indicator">
+        <div class="wait-dot"></div>
+        <div style="font-family:var(--mn);font-size:11px;color:var(--txt2)" id="wait-msg">Waiting for opponent...</div>
+      </div>
+      <div style="font-family:var(--mn);font-size:10px;color:var(--txt3);line-height:1.7;text-align:center">
+        Your opponent opens GENCRAFT on their device,<br>selects Multiplayer Forge, and enters the code above.
+      </div>
+      <button class="btn ghost" style="max-width:300px" onclick="showPage('multi-setup')">← BACK</button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: GAME
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-game">
+
+    <!-- HUD -->
+    <div class="hud-bar" id="game-hud">
+      <div class="hud-grid">
+        <div class="hud-player">
+          <div class="hp-name" id="p1name">MINER</div>
+          <div class="hp-score p1" id="s1">200 XP</div>
+          <div class="hp-hearts" id="h1"></div>
+          <div class="hp-streak" id="st1"></div>
+        </div>
+        <div class="hud-center">
+          <div class="hc-lbl">QUESTION</div>
+          <div class="hc-num" id="qnum">01/20</div>
+          <div class="hc-badge" id="qbadge">STANDARD</div>
+        </div>
+        <div class="hud-player right">
+          <div class="hp-name" id="p2name">OPPONENT</div>
+          <div class="hp-score p2" id="s2">200 XP</div>
+          <div class="hp-hearts" id="h2" style="justify-content:flex-end"></div>
+          <div class="hp-streak" id="st2" style="text-align:right"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TIMER -->
+    <div class="timer-wrap">
+      <div class="timer-track">
+        <div class="timer-fill" id="timer-bar" style="width:100%;background:var(--em)">
+          <div class="timer-txt" id="timer-txt">18s</div>
+        </div>
+      </div>
+      <div class="timer-lbl">
+        <span>TIME REMAINING</span>
+        <span id="timer-mode-lbl">STANDARD ROUND</span>
+      </div>
+    </div>
+
+    <!-- STAKE PANEL -->
+    <div id="stake-panel" style="display:none">
+      <div class="forge-panel">
+        <div class="forge-hrow">
+          <div class="forge-title" id="stake-title">PLACE YOUR STAKE</div>
+          <div class="forge-vault">VAULT: <b id="vault-val">200</b> XP</div>
+        </div>
+        <div class="forge-desc" id="stake-desc"></div>
+        <div class="ore-grid" id="ore-grid"></div>
+        <div class="btn-row">
+          <button class="btn am" id="stake-confirm-btn" onclick="confirmStake()" disabled>SMELT STAKE</button>
+          <button class="btn ghost" onclick="confirmStake(0)">SKIP FORGE</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QUESTION -->
+    <div id="quiz-wrap" style="display:none">
+      <div class="q-panel" id="q-card">
+        <div class="q-meta">
+          <div class="tag em" id="q-cat-tag">BASICS</div>
+          <div class="tag am" id="q-stake-tag" style="display:none">STAKED 0 XP</div>
+        </div>
+        <div class="q-txt" id="q-txt"></div>
+        <div class="opts" id="opts"></div>
+        <div id="q-result"></div>
+        <div id="q-explain"></div>
+      </div>
+    </div>
+
+    <!-- CONTRACT ANIMATION -->
+    <div id="contract-anim" style="display:none">
+      <div class="contract-panel">
+        <div class="ct-top">
+          <div class="ct-spin"></div>
+          <div class="ct-title" id="ct-title">EXECUTING INTELLIGENT CONTRACT...</div>
+        </div>
+        <div class="ct-log" id="ct-log"></div>
+        <div class="ct-verdict" id="ct-verdict"></div>
+      </div>
+    </div>
+
+    <!-- OD FINALE -->
+    <div id="od-final" style="display:none">
+      <div class="od-panel">
+        <div class="od-head">
+          <div class="od-main-title">OPTIMISTIC DEMOCRACY</div>
+          <div class="od-sub">Final consensus round — vote with the AI validator majority to earn your bonus.</div>
+          <div class="od-bonus-pill">◆ BONUS: +50 XP</div>
+        </div>
+        <div class="divider" style="margin-bottom:14px"></div>
+        <div style="font-family:var(--px);font-size:6px;color:var(--txt3);letter-spacing:.12em;margin-bottom:8px">THE CLAIM — TRUE OR FALSE?</div>
+        <div class="od-claim" id="od-claim"></div>
+        <div style="font-family:var(--px);font-size:6px;color:var(--txt3);letter-spacing:.1em;margin-bottom:8px">AI VALIDATORS DELIBERATING</div>
+        <div class="vrow" id="od-vrow"></div>
+        <div class="split-notice" id="split-notice">
+          ⚡ 3–2 SPLIT — Mirrors GenLayer's real Optimistic Democracy. Appeal window is now open.
+        </div>
+        <div class="appeal-box" id="appeal-box">
+          <p>Split detected. Invoke an <strong style="color:var(--di)">APPEAL</strong> to expand the validator set 5 → 10, exactly as GenLayer's real mechanism works. Cost: <strong style="color:var(--rs)">−20 XP</strong>.</p>
+          <div class="btn-row">
+            <button class="btn di" onclick="triggerAppeal()">INVOKE APPEAL (−20 XP)</button>
+            <button class="btn ghost" onclick="skipAppeal()">SKIP</button>
+          </div>
+        </div>
+        <div id="od-vote-wrap" style="display:none">
+          <div class="od-vote-grid">
+            <button class="od-vbtn t" onclick="castODVote(true)">TRUE</button>
+            <button class="od-vbtn f" onclick="castODVote(false)">FALSE</button>
+          </div>
+          <div class="od-hint">VOTE WITH THE VALIDATOR MAJORITY TO EARN +50 XP</div>
+        </div>
+        <div id="od-result-box" style="display:none">
+          <div class="od-res-title" id="od-res-title"></div>
+          <div class="od-res-sub" id="od-res-sub"></div>
+          <button class="btn em" onclick="showResults()" style="margin-top:8px">VIEW FINAL RESULTS →</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end page-game -->
+
+  <!-- ══════════════════════════════════════
+       PAGE: RESULTS
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-results">
+    <div class="lb-hero panel" id="results-banner">
+      <div class="px-title" style="font-size:16px" id="res-title">MISSION COMPLETE</div>
+      <div class="px-sub" style="margin-top:4px" id="res-sub"></div>
+    </div>
+    <div class="lb-table" id="results-rows"></div>
+    <div class="od-bonus-display" id="od-bonus-display">
+      <span style="font-family:var(--px);font-size:7px;color:var(--di);letter-spacing:.08em">◆ OD FINALE BONUS</span>
+      <span style="font-family:var(--px);font-size:9px" id="od-bonus-val">NOT EARNED</span>
+    </div>
+    <div class="stat-grid-3" id="results-stats"></div>
+    <button id="share-card-btn" class="btn pu" onclick="shareResultCard()" style="display:none;margin-bottom:8px">
+      ◈ SHARE RESULT CARD — DOWNLOAD AS IMAGE
+    </button>
+    <div class="btn-row">
+      <button class="btn em"    onclick="restartGame()">PLAY AGAIN</button>
+      <button class="btn di"    onclick="showPage('leaderboard')">LEADERBOARD</button>
+      <button class="btn ghost" onclick="showPage('splash')">HOME</button>
+    </div>
+  </div>
+
+</div><!-- end #app -->
+
+<!-- GenLayer status bar -->
+<div id="gl-status" style="display:none;position:fixed;bottom:0;left:0;right:0;padding:8px 16px;font-family:var(--mn);font-size:11px;background:var(--bg2);border-top:1px solid var(--bdr2);text-align:center;z-index:9998;"></div>
+
+<!-- 1. Game Logic -->
+<script src="game.js"></script>
+<!-- 2. Web3 / Genlayer integration -->
+<script src="genlayer.js"></script>
+<!-- 3. Multiplayer overrides / function patching -->
+<script src="multiplayer.js"></script>
+</body>
+</html>
