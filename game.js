@@ -915,7 +915,7 @@ function showResults() {
 
   const rows=mode==='solo'
     ?[{name:myName,xp:score1,color:'var(--em)',detail:correctAnswers+' CORRECT · '+bluffsDetected+' BLUFFS'+(odBonusEarned?' · OD +50':'')}]
-    :[{name:myName,xp:score1,color:'var(--em)',detail:correctAnswers+' CORRECT · '+bluffsDetected+' BLUFFS'+(odBonusEarned?' · OD +50':'')},{name:(typeof MP!=='undefined'&&MP.opponentName)||'OPPONENT',xp:score2,color:'var(--am)',detail:'OPPONENT FINAL SCORE'}].sort((a,b)=>b.xp-a.xp);
+    :[{name:myName,xp:score1,color:'var(--em)',detail:correctAnswers+' CORRECT · '+bluffsDetected+' BLUFFS'+(odBonusEarned?' · OD +50':'')},{name:(typeof MP!=='undefined'&&(MP.oppName||MP.opponentName))||'OPPONENT',xp:score2,color:'var(--am)',detail:'OPPONENT FINAL SCORE'}].sort((a,b)=>b.xp-a.xp);
 
   const rc=document.getElementById('results-rows'); rc.innerHTML='';
   rows.forEach((pl,i)=>{

@@ -32,13 +32,16 @@ function buildQuestionsFromSeed(seed){
 
 /* ─── ABLY CONNECT — same as test page ──── */
 function mpConnect(roomId, onConnected) {
+  // Create Ably client exactly like the working test page
   MP.ably = new Ably.Realtime({ key: ABLY_KEY, echoMessages: false });
   MP.ch   = MP.ably.channels.get('gc-' + roomId);
 
+  // Subscribe to ALL messages on the channel
   MP.ch.subscribe(function(msg) {
     mpOnMessage(msg.name, msg.data || {});
   });
 
+  // Wait for connected then call onConnected
   MP.ably.connection.on('connected', function() {
     onConnected();
   });
@@ -56,6 +59,7 @@ function mpPub(event, data) {
 /* ─── MESSAGE HANDLER ───────────────────── */
 function mpOnMessage(event, d) {
 
+  // A player joined the room
   if (event === 'player_joined') {
     const name = d.name || d.from;
     if (name && !MP.players.find(p => p.name === name)) {
@@ -63,6 +67,7 @@ function mpOnMessage(event, d) {
     }
     if (name !== MP.myName) MP.oppName = name;
     mpRenderWaiting();
+    // Host: broadcast current room state back so joiner sees everyone
     if (MP.isHost) {
       mpPub('room_state', {
         players: MP.players.map(p => p.name),
@@ -72,6 +77,7 @@ function mpOnMessage(event, d) {
     }
   }
 
+  // Host sent room state (received by joiners)
   if (event === 'room_state') {
     MP.players = (d.players || []).map(function(n){ return { name: n }; });
     if (d.host && d.host !== MP.myName) MP.oppName = d.host;
@@ -80,6 +86,7 @@ function mpOnMessage(event, d) {
     showMultiStatus('Waiting for host to start... (' + MP.players.length + ' in room)');
   }
 
+  // Host started the game
   if (event === 'game_start') {
     if (MP.started) return;
     MP.started = true;
@@ -88,6 +95,7 @@ function mpOnMessage(event, d) {
     mpCountdown();
   }
 
+  // Opponent answered a question
   if (event === 'answer') {
     if (d.from === myName) return;
     if (d.score  !== undefined) score2  = d.score;
@@ -100,6 +108,7 @@ function mpOnMessage(event, d) {
     updateHUD();
   }
 
+  // Opponent finished the game
   if (event === 'game_done') {
     if (d.from === myName) return;
     MP.oppScore = d.score;
@@ -109,6 +118,7 @@ function mpOnMessage(event, d) {
     if (MP.iDone) mpShowResults();
   }
 
+  // Opponent left
   if (event === 'bye') {
     if (!MP.iDone) {
       showMultiStatus('Opponent disconnected.');
@@ -125,6 +135,7 @@ function mpOnMessage(event, d) {
 
 /* ─── WAITING ROOM UI ───────────────────── */
 function mpRenderWaiting() {
+  // Render player cards
   var el = document.getElementById('mp-player-list');
   if (el) {
     el.innerHTML = MP.players.map(function(p, i) {
@@ -139,6 +150,7 @@ function mpRenderWaiting() {
     }).join('');
   }
 
+  // Show host or joiner sections
   var hostSec   = document.getElementById('mp-host-section');
   var joinerSec = document.getElementById('mp-joiner-section');
   var hintSec   = document.getElementById('mp-generic-hint');
@@ -147,13 +159,13 @@ function mpRenderWaiting() {
   if (joinerSec) joinerSec.style.display = MP.isHost ? 'none' : 'block';
 
   if (MP.isHost) {
-    var count = MP.players.length;
-    var btn   = document.getElementById('mp-start-btn');
-    var hint  = document.getElementById('mp-start-hint');
-    var ready = count >= 2;
+    var count  = MP.players.length;
+    var btn    = document.getElementById('mp-start-btn');
+    var hint   = document.getElementById('mp-start-hint');
+    var ready  = count >= 2;
     if (btn) {
-      btn.disabled            = !ready;
-      btn.style.opacity       = ready ? '1' : '0.4';
+      btn.disabled          = !ready;
+      btn.style.opacity     = ready ? '1' : '0.4';
       btn.style.pointerEvents = ready ? 'auto' : 'none';
     }
     if (hint) hint.textContent = ready
@@ -171,12 +183,13 @@ function hostStartGame() {
   var btn = document.getElementById('mp-start-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'STARTING...'; }
 
+  // Broadcast start to everyone — same as test page's doStart()
   mpPub('game_start', { seed: MP.seed, host: MP.myName });
 
+  // Host launches too
   MP.started = true;
   mpCountdown();
 }
-window.hostStartGame = hostStartGame;
 
 /* ─── COUNTDOWN + LAUNCH ────────────────── */
 function mpCountdown() {
@@ -197,6 +210,11 @@ function mpLaunch() {
   mode      = 'multi';
   myName    = MP.myName;
   questions = buildQuestionsFromSeed(MP.seed);
+  // Derive opponent name from players list if not already set
+  if (!MP.oppName) {
+    var opp = MP.players.find(function(p){ return p.name !== MP.myName; });
+    if (opp) MP.oppName = opp.name;
+  }
   showPage('game');
   startGame();
   var p2 = document.getElementById('p2name');
@@ -205,13 +223,14 @@ function mpLaunch() {
 
 /* ─── RESULTS SYNC ──────────────────────── */
 function mpNotifyDone() {
-  MP.iDone        = true;
+  MP.iDone       = true;
   MP.myFinalScore = score1;
   mpPub('game_done', { score: score1 });
 
   if (MP.oppScore !== null) {
     mpShowResults();
   } else {
+    // Show waiting overlay
     hideGamePanels();
     var od = document.getElementById('od-final');
     if (od) od.style.display = 'none';
@@ -230,6 +249,7 @@ function mpNotifyDone() {
       + '<div style="width:8px;height:8px;background:var(--am);border-radius:50%;animation:pulse 1s infinite;"></div>'
       + '<div style="font-family:var(--mn);font-size:11px;color:var(--txt2)">Waiting for ' + (MP.oppName || 'opponent') + '...</div></div>';
 
+    // 60s fallback
     setTimeout(function() {
       if (MP.oppScore === null) { MP.oppScore = score2; mpShowResults(); }
     }, 60000);
@@ -240,6 +260,12 @@ function mpShowResults() {
   var ov = document.getElementById('mp-done-ov');
   if (ov) ov.remove();
   if (MP.oppScore !== null) score2 = MP.oppScore;
+  // Make sure opponentName global is set for results page
+  if (MP.oppName) {
+    try { opponentName = MP.oppName; } catch(e){}
+    // Also patch into MP so showResults can use it
+    if (typeof MP !== 'undefined') MP.opponentName = MP.oppName;
+  }
   var fn = window._origShowResults || window.showResults;
   if (fn) fn();
   setTimeout(mpCleanup, 6000);
@@ -250,16 +276,18 @@ window.joinOrCreate = function() {
   var playerName = (document.getElementById('pname-input').value.trim() || 'MINER').toUpperCase();
   var roomCode   = document.getElementById('room-input').value.trim().toUpperCase();
 
+  // Reset everything
   mpCleanup();
-  MP.myName   = playerName;
-  MP.players  = [];
-  MP.started  = false;
-  MP.iDone    = false;
+  MP.myName  = playerName;
+  MP.players = [];
+  MP.started = false;
+  MP.iDone   = false;
   MP.oppScore = null;
   MP.oppName  = null;
   MP.isHost   = false;
   MP.roomId   = null;
 
+  // Reset waiting room UI
   var pl = document.getElementById('mp-player-list');
   if (pl) pl.innerHTML = '';
   ['mp-host-section','mp-joiner-section'].forEach(function(id) {
@@ -279,9 +307,11 @@ window.joinOrCreate = function() {
     MP.players = [{ name: playerName }];
     document.getElementById('room-display').textContent = roomCode;
 
+    // Connect using exact same pattern as test page
     mpConnect(roomCode, function() {
       showMultiStatus('Connected! Announcing...');
       mpRenderWaiting();
+      // Announce presence — same as test page's pub('join', {name})
       mpPub('player_joined', { name: playerName });
     });
 
@@ -295,6 +325,7 @@ window.joinOrCreate = function() {
     MP.players = [{ name: playerName }];
     document.getElementById('room-display').textContent = rid;
 
+    // Connect using exact same pattern as test page
     mpConnect(rid, function() {
       showMultiStatus('Room ready! Share this code.');
       mpRenderWaiting();
