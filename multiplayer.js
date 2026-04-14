@@ -1,351 +1,623 @@
 /* ════════════════════════════════════════
-   GENCRAFT MULTIPLAYER v10
-   Pure Supabase, DB-poll architecture
-   
-   RLS must be disabled on rooms table.
-   Run fix-rls.js if you haven't already.
+   GENCRAFT — MULTIPLAYER.JS  (v8)
+   Pure Supabase — uses EXISTING schema
+   No new columns required.
+
+   Existing rooms table columns used:
+     id, player1_name, player2_name,
+     status, question_seed
+
+   Status flow:
+     'waiting'  → host created, no one joined
+     'ready'    → at least 1 player joined
+     'starting' → host clicked START
+     'active'   → game running
+     'finished' → game over
 ════════════════════════════════════════ */
 
-(function() {  // wrapped in IIFE to avoid any global scope collisions
+const SUPABASE_URL = 'https://xsmwnohozgwtliauvees.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzbXdub2hvemd3dGxpYXV2ZWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDUzNjEsImV4cCI6MjA5MTQyMTM2MX0.u_Hj594JZ0ZEkHPc8j0lWQZAVCHniykcCVrnK7COZhk';
 
-const SB_URL = 'https://xsmwnohozgwtliauvees.supabase.co';
-const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhzbXdub2hvemd3dGxpYXV2ZWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDUzNjEsImV4cCI6MjA5MTQyMTM2MX0.u_Hj594JZ0ZEkHPc8j0lWQZAVCHniykcCVrnK7COZhk';
-
-// ─── STATE ───────────────────────────────
+/* ════════════════════════════════════════
+   STATE
+════════════════════════════════════════ */
 const MP = {
-  roomId:     null,
-  isHost:     false,
-  myName:     null,
-  myIndex:    0,
-  players:    [],
-  seed:       null,
-  channel:    null,
-  connected:  false,
-  started:    false,
-  pollTimer:  null,
-  iDone:      false,
-  oppScore:   null,
-  oppName:    null,
+  roomId:             null,
+  isHost:             false,
+  myName:             null,
+  opponentName:       null,
+  questionSeed:       null,
+  channel:            null,
+  isConnected:        false,
+  gameStarted:        false,
+  pollTimer:          null,
+  iFinished:          false,
+  opponentFinalScore: null,
+  myFinalScore:       null,
 };
 
-// ─── SUPABASE ────────────────────────────
-function db() {
-  if (!window._sbc) {
-    if (!window.supabase) { setMsg('⚠ Supabase SDK not loaded', true); return null; }
-    window._sbc = window.supabase.createClient(SB_URL, SB_KEY);
+/* ════════════════════════════════════════
+   SUPABASE CLIENT
+════════════════════════════════════════ */
+function getDB() {
+  if (!window._supabaseClient) {
+    if (!window.supabase) {
+      showMultiError('Supabase not loaded. Please refresh.');
+      return null;
+    }
+    window._supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   }
-  return window._sbc;
+  return window._supabaseClient;
 }
 
-// ─── DOM HELPERS ─────────────────────────
-function setMsg(txt, isErr) {
-  const el = document.getElementById('wait-msg');
-  if (el) { el.textContent = txt; el.style.color = isErr ? 'var(--rs)' : ''; }
-  console.log('[MP]', txt);
+/* ════════════════════════════════════════
+   SEEDED QUESTIONS — same order both sides
+════════════════════════════════════════ */
+function seededRandom(seed) {
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
 }
-function setCount(n) {
-  const el = document.getElementById('mp-count-num');
-  if (el) el.textContent = n;
+function seededShuffle(arr, seed) {
+  const rand = seededRandom(seed);
+  const r = [...arr];
+  for (let i = r.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [r[i], r[j]] = [r[j], r[i]];
+  }
+  return r;
 }
-function setPlayerList(players) {
-  const el = document.getElementById('mp-player-list');
-  if (!el) return;
+function buildQuestionsFromSeed(seed) {
+  const base   = seededShuffle([...QUESTIONS], seed).slice(0, 16);
+  const bluffs = seededShuffle([...BLUFFS], seed + 1).slice(0, 4);
+  const out = [];
+  let bi = 0;
+  for (let i = 0; i < base.length; i++) {
+    out.push(base[i]);
+    if ((i + 1) % 4 === 0 && bi < bluffs.length) out.push(bluffs[bi++]);
+  }
+  return out.slice(0, 20);
+}
+
+/* ════════════════════════════════════════
+   DATABASE HELPERS
+════════════════════════════════════════ */
+async function dbCreate(playerName) {
+  const db = getDB();
+  if (!db) return null;
+
+  const roomId = 'GL' + Math.floor(1000 + Math.random() * 9000);
+  const seed   = Math.floor(Math.random() * 1000000);
+
+  const { error } = await db.from('rooms').insert({
+    id:            roomId,
+    player1_name:  playerName,
+    status:        'waiting',
+    question_seed: seed,
+  });
+
+  if (error) {
+    showMultiError('Could not create room: ' + error.message);
+    console.error('DB create error:', error);
+    return null;
+  }
+
+  return { roomId, seed };
+}
+
+async function dbJoin(roomId, playerName) {
+  const db = getDB();
+  if (!db) return { ok: false, msg: 'Database not available.' };
+
+  const { data: room, error: fe } = await db
+    .from('rooms').select('*').eq('id', roomId).single();
+
+  if (fe || !room) return { ok: false, msg: 'Room "' + roomId + '" not found. Check the code.' };
+
+  if (room.status === 'finished')
+    return { ok: false, msg: 'That game has already finished.' };
+  if (room.status === 'starting' || room.status === 'active')
+    return { ok: false, msg: 'That game has already started.' };
+
+  const { error: ue } = await db.from('rooms')
+    .update({ player2_name: playerName, status: 'ready' })
+    .eq('id', roomId);
+
+  if (ue) return { ok: false, msg: 'Could not join: ' + ue.message };
+
+  return { ok: true, room };
+}
+
+async function dbFetch(roomId) {
+  const db = getDB();
+  if (!db) return null;
+  const { data, error } = await db
+    .from('rooms').select('*').eq('id', roomId).single();
+  if (error || !data) return null;
+  return data;
+}
+
+async function dbSetStatus(status) {
+  const db = getDB();
+  if (!db || !MP.roomId) return false;
+  const { error } = await db.from('rooms')
+    .update({ status })
+    .eq('id', MP.roomId);
+  if (error) {
+    console.error('Status update failed:', error);
+    return false;
+  }
+  return true;
+}
+
+/* ════════════════════════════════════════
+   WAITING ROOM — POLL LOOP
+   Runs every 2.5s. Reads DB row and:
+   • Updates the live player list UI
+   • Detects when status → 'starting'
+════════════════════════════════════════ */
+function startPoll() {
+  stopPoll();
+  MP.pollTimer = setInterval(mpPollTick, 2500);
+  // Run immediately so UI updates without waiting 2.5s
+  mpPollTick();
+}
+
+function stopPoll() {
+  if (MP.pollTimer) { clearInterval(MP.pollTimer); MP.pollTimer = null; }
+}
+
+async function mpPollTick() {
+  if (!MP.roomId) return;
+
+  const room = await dbFetch(MP.roomId);
+  if (!room) return;
+
+  // Build player list from what we know
+  const players = [];
+  if (room.player1_name) players.push({ name: room.player1_name, isHost: true });
+  if (room.player2_name) players.push({ name: room.player2_name, isHost: false });
+
+  // Store opponent name
+  if (MP.isHost && room.player2_name) {
+    MP.opponentName = room.player2_name;
+  } else if (!MP.isHost) {
+    MP.opponentName = room.player1_name;
+  }
+
+  // Render player cards
+  renderPlayerList(players);
+
+  if (MP.isHost) {
+    if (players.length === 1) {
+      showMultiStatus('Waiting for players to join...');
+      hideStartBtn();
+    } else {
+      showMultiStatus(players.length + ' player' + (players.length > 1 ? 's' : '') + ' ready — start when everyone is in!');
+      showStartBtn();
+    }
+  } else {
+    showMultiStatus('Waiting for host to start... (' + players.length + ' in room)');
+  }
+
+  // DETECT GAME START → triggered when host sets status='starting'
+  if (room.status === 'starting' && !MP.gameStarted) {
+    stopPoll();
+    MP.gameStarted  = true;
+    MP.questionSeed = room.question_seed;
+
+    // Update opponent name one more time from fresh data
+    if (MP.isHost) {
+      MP.opponentName = room.player2_name || 'OPPONENT';
+    } else {
+      MP.opponentName = room.player1_name || 'OPPONENT';
+    }
+
+    showMultiStatus('Game starting...');
+    runCountdown(3, () => {
+      connectBroadcast(MP.roomId);
+      launchGame();
+    });
+  }
+
+  if (room.status === 'finished' && !MP.gameStarted) {
+    stopPoll();
+    showMultiError('Room was closed.');
+  }
+}
+
+/* ════════════════════════════════════════
+   HOST START GAME
+════════════════════════════════════════ */
+async function hostStartGame() {
+  if (!MP.isHost || !MP.roomId) return;
+
+  const btn = document.getElementById('mp-start-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'STARTING...'; }
+
+  showMultiStatus('Starting game...');
+  stopPoll();
+
+  const ok = await dbSetStatus('starting');
+  if (!ok) {
+    showMultiError('Failed to start. Please try again.');
+    if (btn) { btn.disabled = false; btn.textContent = '⛏ START GAME'; }
+    startPoll();
+    return;
+  }
+
+  // Host launches immediately — no need to wait for next poll
+  MP.gameStarted = true;
+  runCountdown(3, () => {
+    connectBroadcast(MP.roomId);
+    launchGame();
+  });
+}
+
+// Expose globally so onclick="hostStartGame()" works in HTML
+window.hostStartGame = hostStartGame;
+
+/* ════════════════════════════════════════
+   COUNTDOWN HELPER
+════════════════════════════════════════ */
+function runCountdown(n, onDone) {
+  showMultiStatus('Starting in ' + n + '...');
+  let i = n;
+  const iv = setInterval(() => {
+    i--;
+    if (i > 0) {
+      showMultiStatus('Starting in ' + i + '...');
+    } else {
+      clearInterval(iv);
+      onDone();
+    }
+  }, 1000);
+}
+
+/* ════════════════════════════════════════
+   WAITING ROOM UI HELPERS
+════════════════════════════════════════ */
+function renderPlayerList(players) {
+  // The mp-player-list div already exists in game.html
+  let el = document.getElementById('mp-player-list');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'mp-player-list';
+    el.style.cssText = 'display:flex;flex-direction:column;gap:6px;width:100%;max-width:320px;margin-top:8px;';
+    const indicator = document.querySelector('#page-waiting .wait-indicator');
+    if (indicator) indicator.insertAdjacentElement('afterend', el);
+  }
+
   el.innerHTML = players.map((p, i) => {
-    const mine  = i === MP.myIndex;
-    const col   = i === 0 ? 'var(--em)' : 'var(--am)';
-    const label = mine ? '(YOU)' : i === 0 ? '(HOST)' : '(JOINED)';
-    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
-      border:1px solid ${col};background:${i===0?'rgba(74,222,128,.06)':'rgba(251,191,36,.06)'};">
-      <div style="width:26px;height:26px;border:2px solid ${col};color:${col};
-        font-family:var(--px);font-size:9px;display:flex;align-items:center;justify-content:center">
-        ${(p.name||'?')[0].toUpperCase()}
-      </div>
-      <div style="flex:1;font-family:var(--px);font-size:8px;color:${col}">
-        ${p.name} <span style="opacity:.55">${label}</span>
-      </div>
-      <div style="width:7px;height:7px;border-radius:50%;background:${col};animation:pulse 1.4s infinite"></div>
+    const col  = i === 0 ? 'var(--em)' : 'var(--am)';
+    const bg   = i === 0 ? 'rgba(74,222,128,0.05)' : 'rgba(251,191,36,0.05)';
+    const isMe = p.name === MP.myName;
+    const tag  = isMe ? ' · YOU' : (p.isHost ? ' · HOST' : ' · JOINED');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid ${col};background:${bg};">
+      <div style="width:30px;height:30px;border:2px solid ${col};color:${col};font-family:var(--px);font-size:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${p.name[0].toUpperCase()}</div>
+      <div style="flex:1;font-family:var(--px);font-size:8px;color:${col};letter-spacing:.04em;">${p.name}<span style="color:var(--txt3);font-size:6px;">${tag}</span></div>
+      <div style="width:7px;height:7px;background:${col};border-radius:50%;animation:pulse 1.2s ease-in-out infinite;"></div>
     </div>`;
   }).join('');
 }
-function setStartBtn(canStart) {
-  const wrap = document.getElementById('mp-start-wrap');
-  const btn  = document.getElementById('mp-start-btn');
-  const hint = document.getElementById('mp-start-hint');
-  if (!wrap) return;
-  wrap.style.display  = 'flex';
-  wrap.style.flexDirection = 'column';
-  wrap.style.gap      = '6px';
-  wrap.style.alignItems = 'center';
-  wrap.style.width    = '100%';
-  wrap.style.maxWidth = '300px';
-  if (btn) {
-    btn.disabled      = !canStart;
-    btn.style.opacity = canStart ? '1' : '0.35';
-    btn.style.cursor  = canStart ? 'pointer' : 'not-allowed';
-  }
-  if (hint) {
-    hint.textContent  = canStart
-      ? (MP.players.length - 1) + ' player(s) ready. Click START when everyone is in!'
-      : 'Waiting for at least 1 more player to join...';
-    hint.style.color  = canStart ? 'var(--em)' : 'var(--txt3)';
-  }
+
+function showStartBtn() {
+  if (document.getElementById('mp-start-btn')) return;
+  const btn = document.createElement('button');
+  btn.id        = 'mp-start-btn';
+  btn.className = 'btn em';
+  btn.style.cssText = 'max-width:300px;margin-top:4px;';
+  btn.textContent = '⛏ START GAME';
+  btn.onclick = hostStartGame;
+  const backBtn = document.querySelector('#page-waiting .btn.ghost');
+  if (backBtn) backBtn.insertAdjacentElement('beforebegin', btn);
 }
 
-// ─── SEEDED SHUFFLE ──────────────────────
-function rng(seed) {
-  let s = seed;
-  return () => { s = (s * 1664525 + 1013904223) & 0xffffffff; return (s >>> 0) / 0xffffffff; };
-}
-function shuffle(arr, seed) {
-  const r = rng(seed), a = [...arr];
-  for (let i = a.length-1; i > 0; i--) { const j = Math.floor(r()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
-  return a;
-}
-function makeQuestions(seed) {
-  const base   = shuffle([...QUESTIONS], seed).slice(0,16);
-  const bluffs = shuffle([...BLUFFS], seed+1).slice(0,4);
-  const out = []; let b = 0;
-  for (let i = 0; i < base.length; i++) {
-    out.push(base[i]);
-    if ((i+1)%4===0 && b<bluffs.length) out.push(bluffs[b++]);
-  }
-  return out.slice(0,20);
+function hideStartBtn() {
+  document.getElementById('mp-start-btn')?.remove();
 }
 
-// ─── ROOM OPERATIONS ─────────────────────
-async function createRoom(name) {
-  const d = db(); if (!d) return null;
-  const id   = 'GL' + Math.floor(1000 + Math.random()*9000);
-  const seed = Math.floor(Math.random()*1000000);
-  const ps   = [{name, score:0, finished:false}];
-  setMsg('Creating room in database...');
-  const { error } = await d.from('rooms').insert({
-    id, player1_name: name, status: 'waiting',
-    question_seed: seed, players: JSON.stringify(ps),
+/* ════════════════════════════════════════
+   SUPABASE REALTIME BROADCAST
+   In-game score/event sync.
+   Channel-level only — no postgres_changes.
+   Works on all Supabase plans.
+════════════════════════════════════════ */
+function connectBroadcast(roomId) {
+  const db = getDB();
+  if (!db) return;
+
+  const ch = db.channel('gc:' + roomId, {
+    config: { broadcast: { self: false } },
   });
-  if (error) { setMsg('❌ Create failed: ' + error.message, true); console.error(error); return null; }
-  MP.roomId = id; MP.isHost = true; MP.myName = name;
-  MP.myIndex = 0; MP.seed = seed; MP.players = ps;
-  return id;
-}
 
-async function joinRoom(code, name) {
-  const d = db(); if (!d) return {ok:false, msg:'DB not connected'};
-  setMsg('Looking up room ' + code + '...');
-  const { data: room, error } = await d.from('rooms').select('*').eq('id', code).maybeSingle();
-  if (error) return {ok:false, msg:'DB error: ' + error.message};
-  if (!room)  return {ok:false, msg:'Room "' + code + '" not found.'};
-  if (room.status === 'finished')  return {ok:false, msg:'That game already finished.'};
-  if (room.status === 'starting' || room.status === 'active') return {ok:false, msg:'Game already started.'};
-  let ps = []; try { ps = JSON.parse(room.players||'[]'); } catch(e){}
-  if (ps.find(p => p.name===name)) name = name + ps.length;
-  ps.push({name, score:0, finished:false});
-  const { error: e2 } = await d.from('rooms')
-    .update({ players: JSON.stringify(ps), player2_name: name }).eq('id', code);
-  if (e2) return {ok:false, msg:'Join failed: ' + e2.message};
-  MP.roomId = code; MP.isHost = false; MP.myName = name;
-  MP.myIndex = ps.length-1; MP.seed = room.question_seed;
-  MP.players = ps; MP.oppName = room.player1_name;
-  return {ok:true};
-}
+  ch.on('broadcast', { event: '*' }, ({ event, payload }) => {
+    handleBroadcast(event, payload || {});
+  });
 
-async function pollRoom() {
-  const d = db(); if (!d || !MP.roomId) return;
-  const { data: room, error } = await d.from('rooms').select('*').eq('id', MP.roomId).maybeSingle();
-  if (error || !room) { console.warn('[MP poll]', error?.message); return; }
+  ch.subscribe((status) => {
+    if (status === 'SUBSCRIBED') MP.isConnected = true;
+  });
 
-  let ps = []; try { ps = JSON.parse(room.players||'[]'); } catch(e){}
-  MP.players = ps;
-  setCount(ps.length);
-  setPlayerList(ps);
-
-  if (MP.isHost) {
-    setStartBtn(ps.length >= 2);
-    if (ps.length <= 1) setMsg('Waiting for players to join...');
-    else setMsg(ps.length + ' players in room — click START when ready!');
-  } else {
-    setMsg('Waiting for host to start... (' + ps.length + ' in room)');
-  }
-
-  // Detect game start
-  if (room.status === 'starting' && !MP.started) {
-    MP.started = true; MP.seed = room.question_seed;
-    stopPoll();
-    if (ps.length >= 2) MP.oppName = (ps.find((_,i) => i!==MP.myIndex)||{}).name||'OPPONENT';
-    countdown(() => { openBroadcast(); launchGame(); });
-  }
-  if (room.status === 'finished' && !MP.started) { stopPoll(); setMsg('Room was closed.', true); }
-}
-
-function stopPoll() { if (MP.pollTimer) { clearInterval(MP.pollTimer); MP.pollTimer = null; } }
-function startPoll() { stopPoll(); MP.pollTimer = setInterval(pollRoom, 2000); }
-
-function countdown(cb) {
-  let c = 3; setMsg('Starting in ' + c + '...');
-  const iv = setInterval(() => { c--; if (c>0) setMsg('Starting in '+c+'...'); else { clearInterval(iv); cb(); } }, 1000);
-}
-
-// ─── HOST STARTS GAME ────────────────────
-async function hostStartGame() {
-  if (!MP.isHost || MP.started || MP.players.length < 2) return;
-  const btn = document.getElementById('mp-start-btn');
-  if (btn) { btn.disabled = true; btn.textContent = 'STARTING...'; }
-  setMsg('Saving game start to database...');
-  const d = db();
-  const { error } = await d.from('rooms').update({
-    status: 'starting', question_seed: MP.seed,
-  }).eq('id', MP.roomId);
-  if (error) { setMsg('❌ Start failed: ' + error.message, true); return; }
-  MP.started = true; stopPoll();
-  if (MP.players.length >= 2) MP.oppName = (MP.players.find((_,i)=>i!==0)||{}).name||'OPPONENT';
-  countdown(() => { openBroadcast(); launchGame(); });
-}
-window.hostStartGame = hostStartGame;
-
-// ─── BROADCAST (in-game scores) ──────────
-function openBroadcast() {
-  const d = db(); if (!d) return;
-  const ch = d.channel('gc-'+MP.roomId, { config:{broadcast:{self:false}} });
-  ch.on('broadcast',{event:'*'},({event,payload}) => onMsg(event,payload));
-  ch.subscribe(s => { if (s==='SUBSCRIBED') MP.connected = true; });
   MP.channel = ch;
 }
-function send(ev, data) {
-  if (MP.channel && MP.connected) MP.channel.send({type:'broadcast',event:ev,payload:data||{}});
+
+function broadcast(event, payload) {
+  if (!MP.channel) return;
+  MP.channel.send({ type: 'broadcast', event, payload: payload || {} });
 }
 
-function onMsg(ev, data) {
-  if (ev==='answer' && data.player_index!==MP.myIndex) {
-    score2=data.new_score; streak2=data.streak||0;
-    if (data.player_name){ MP.oppName=data.player_name; const el=document.getElementById('p2name'); if(el)el.textContent=data.player_name; }
-    updateHUD();
+/* ════════════════════════════════════════
+   IN-GAME BROADCAST HANDLER
+════════════════════════════════════════ */
+function handleBroadcast(event, data) {
+  if (event === 'answer') {
+    if (data.player_name && data.player_name !== myName) {
+      score2  = data.new_score  || score2;
+      streak2 = data.streak     || 0;
+      if (data.player_name !== MP.opponentName) {
+        MP.opponentName = data.player_name;
+        const el = document.getElementById('p2name');
+        if (el) el.textContent = data.player_name;
+      }
+      updateHUD();
+    }
   }
-  if (ev==='game_finished' && data.player_index!==MP.myIndex) {
-    MP.oppScore=data.final_score; if(data.player_name)MP.oppName=data.player_name;
-    score2=data.final_score; updateHUD(); if(MP.iDone)showFinal();
+
+  if (event === 'game_finished') {
+    if (data.player_name && data.player_name !== myName) {
+      MP.opponentFinalScore = data.final_score;
+      if (data.player_name) MP.opponentName = data.player_name;
+      score2 = data.final_score;
+      updateHUD();
+      if (MP.iFinished) doShowFinalResults();
+    }
   }
-  if (ev==='disconnect') {
-    if (!MP.iDone){ setMsg('Opponent disconnected.'); mode='solo'; const el=document.getElementById('p2name')?.closest('.hud-player'); if(el)el.style.opacity='.4'; }
-    else if(MP.oppScore===null){ MP.oppScore=score2; showFinal(); }
+
+  if (event === 'disconnect') {
+    if (!MP.iFinished) {
+      showMultiStatus('Opponent disconnected.');
+      mode = 'solo';
+      const p2 = document.getElementById('p2name')?.closest('.hud-player');
+      if (p2) p2.style.opacity = '0.4';
+    } else {
+      MP.opponentFinalScore = MP.opponentFinalScore ?? score2;
+      doShowFinalResults();
+    }
   }
 }
 
-// ─── RESULTS ─────────────────────────────
-function iFinished() {
-  MP.iDone=true; MP.myScore=score1;
-  send('game_finished',{final_score:score1,player_name:myName,player_index:MP.myIndex});
-  saveFinalToDB(score1);
-  if (MP.oppScore!==null) showFinal(); else showWaiting();
-}
-
-async function saveFinalToDB(sc) {
-  const d=db(); if(!d||!MP.roomId)return;
-  const {data:room}=await d.from('rooms').select('players').eq('id',MP.roomId).maybeSingle();
-  if(!room)return;
-  let ps=[]; try{ps=JSON.parse(room.players||'[]');}catch(e){}
-  if(ps[MP.myIndex]){ps[MP.myIndex].score=sc;ps[MP.myIndex].finished=true;}
-  await d.from('rooms').update({players:JSON.stringify(ps)}).eq('id',MP.roomId);
-}
-
-function showWaiting() {
-  hideGamePanels();
-  const od=document.getElementById('od-final'); if(od)od.style.display='none';
-  let ov=document.getElementById('waiting-for-opponent');
-  if(!ov){ ov=document.createElement('div'); ov.id='waiting-for-opponent';
-    ov.style.cssText='padding:28px;background:var(--stone);border:2px solid var(--am);text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center;';
-    document.getElementById('page-game').appendChild(ov); }
-  ov.style.display='flex';
-  ov.innerHTML='<div style="font-family:var(--px);font-size:8px;color:var(--am)">GAME COMPLETE</div>'
-    +'<div style="font-family:var(--px);font-size:22px;color:var(--em)">'+score1+' XP</div>'
-    +'<div style="font-family:var(--mn);font-size:12px;color:var(--txt2)">Locked in. Waiting for opponent...</div>'
-    +'<div style="display:flex;align-items:center;gap:8px"><div style="width:8px;height:8px;background:var(--am);border-radius:50%;animation:pulse 1s infinite"></div>'
-    +'<div style="font-family:var(--mn);font-size:11px;color:var(--txt2)">Waiting for '+(MP.oppName||'opponent')+'...</div></div>';
-  setTimeout(()=>{ if(MP.oppScore===null){MP.oppScore=score2;showFinal();}},60000);
-}
-
-function showFinal() {
-  document.getElementById('waiting-for-opponent')?.remove();
-  if(MP.oppScore!==null)score2=MP.oppScore;
-  (window._origShowResults||showResults)();
-  setTimeout(()=>cleanup(),5000);
-}
-
-// ─── LAUNCH GAME ─────────────────────────
+/* ════════════════════════════════════════
+   GAME LAUNCH
+════════════════════════════════════════ */
 function launchGame() {
-  mode='multi'; myName=MP.myName; questions=makeQuestions(MP.seed);
-  showPage('game'); startGame();
-  const p2=document.getElementById('p2name'); if(p2)p2.textContent=MP.oppName||'OPPONENT';
+  mode      = 'multi';
+  myName    = MP.myName;
+  questions = buildQuestionsFromSeed(MP.questionSeed);
+
+  showPage('game');
+  startGame();
+
+  // Set opponent name after startGame (which sets p1name)
+  const p2el = document.getElementById('p2name');
+  if (p2el) p2el.textContent = MP.opponentName || 'OPPONENT';
 }
 
-// ─── MAIN ENTRY ──────────────────────────
-window.joinOrCreate = async function() {
-  const name = (document.getElementById('pname-input').value.trim()||'MINER').toUpperCase();
-  const code  =  document.getElementById('room-input').value.trim().toUpperCase();
+/* ════════════════════════════════════════
+   RESULTS SYNCHRONISATION
+════════════════════════════════════════ */
+function notifyIFinished() {
+  MP.iFinished    = true;
+  MP.myFinalScore = score1;
 
-  showPage('waiting');
+  broadcast('game_finished', {
+    final_score:  score1,
+    player_name:  myName,
+  });
 
-  // Reset UI
-  setMsg('Connecting...');
-  setCount('...');
-  const pl = document.getElementById('mp-player-list'); if(pl) pl.innerHTML='';
-  const sw = document.getElementById('mp-start-wrap'); if(sw) sw.style.display='none';
-
-  if (code) {
-    // ── JOINER ──
-    document.getElementById('room-display').textContent = code;
-    const res = await joinRoom(code, name);
-    if (!res.ok) { setMsg('⚠ '+res.msg, true); return; }
-    setMsg('Joined "'+code+'"! Waiting for host to start...');
-    setCount(MP.players.length);
-    setPlayerList(MP.players);
-    startPoll();
+  if (MP.opponentFinalScore !== null) {
+    doShowFinalResults();
   } else {
-    // ── HOST ──
-    const roomId = await createRoom(name);
-    if (!roomId) return;
-    document.getElementById('room-display').textContent = roomId;
-    setMsg('Share the code! Waiting for players...');
-    setCount(1);
-    setPlayerList(MP.players);
-    setStartBtn(false);   // show disabled start button for host
-    startPoll();
+    showWaitingForOpponent();
   }
-};
+}
 
-// ─── PATCH game.js HOOKS ─────────────────
-document.addEventListener('DOMContentLoaded', () => {
-  // Intercept answer selection
-  const _sa = window.selectAnswer;
-  if (_sa) window.selectAnswer = function(btn,correct,q,shuffled){
-    _sa(btn,correct,q,shuffled);
-    if(mode==='multi'&&MP.connected) send('answer',{new_score:score1,correct,streak:streak1,player_name:myName,player_index:MP.myIndex});
-  };
-  const _sb = window.selectBluff;
-  if (_sb) window.selectBluff = function(btn,origIndex,q){
-    _sb(btn,origIndex,q);
-    if(mode==='multi'&&MP.connected) send('answer',{new_score:score1,correct:origIndex===q.bluff,streak:streak1,player_name:myName,player_index:MP.myIndex});
-  };
-  const _od = window.castODVote;
-  if (_od) window.castODVote = function(vote){ _od(vote); if(mode==='multi'&&MP.connected) send('od_vote',{vote}); };
+function showWaitingForOpponent() {
+  hideGamePanels();
+  const od = document.getElementById('od-final');
+  if (od) od.style.display = 'none';
 
-  // Intercept showResults
-  const _sr = window.showResults;
-  if (_sr) { window._origShowResults=_sr; window.showResults=function(){ if(mode==='multi'&&MP.channel) iFinished(); else _sr(); }; }
+  let ov = document.getElementById('mp-waiting-ov');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'mp-waiting-ov';
+    ov.style.cssText = 'padding:28px;background:var(--stone);border:2px solid var(--am);text-align:center;display:flex;flex-direction:column;gap:14px;align-items:center;margin:16px;';
+    document.getElementById('page-game').appendChild(ov);
+  }
+  ov.style.display = 'flex';
+  ov.innerHTML =
+    '<div style="font-family:var(--px);font-size:8px;color:var(--am)">ROUND COMPLETE</div>' +
+    '<div style="font-family:var(--px);font-size:24px;color:var(--em)">' + score1 + ' XP</div>' +
+    '<div style="font-family:var(--mn);font-size:12px;color:var(--txt2)">Your score is locked.</div>' +
+    '<div style="display:flex;align-items:center;gap:10px;">' +
+      '<div style="width:8px;height:8px;background:var(--am);border-radius:50%;animation:pulse 1s infinite;"></div>' +
+      '<div style="font-family:var(--mn);font-size:11px;color:var(--txt2)">Waiting for ' + (MP.opponentName || 'opponent') + ' to finish...</div>' +
+    '</div>';
 
-  window.showFinalResults = showFinal;
+  // 60s fallback
+  setTimeout(() => {
+    if (!MP.opponentFinalScore) {
+      MP.opponentFinalScore = score2;
+      doShowFinalResults();
+    }
+  }, 60000);
+}
+
+function doShowFinalResults() {
+  document.getElementById('mp-waiting-ov')?.remove();
+  if (MP.opponentFinalScore !== null) score2 = MP.opponentFinalScore;
+  if (window._originalShowResults) {
+    window._originalShowResults();
+  } else if (window.showResults) {
+    window.showResults();
+  }
+  setTimeout(() => cleanupMP(), 6000);
+}
+
+/* ════════════════════════════════════════
+   CLEANUP
+════════════════════════════════════════ */
+function cleanupMP() {
+  stopPoll();
+  if (MP.channel) {
+    broadcast('disconnect', {});
+    const db = getDB();
+    if (db) db.removeChannel(MP.channel);
+    MP.channel = null;
+  }
+  if (MP.roomId) {
+    const db = getDB();
+    if (db) db.from('rooms').update({ status: 'finished' }).eq('id', MP.roomId);
+  }
+  MP.isConnected        = false;
+  MP.gameStarted        = false;
+  MP.iFinished          = false;
+  MP.opponentFinalScore = null;
+  MP.myFinalScore       = null;
+}
+
+window.addEventListener('beforeunload', () => {
+  if (MP.roomId) cleanupMP();
 });
 
-window.simulateOpponentAnswer = function(correct) {
-  if(mode!=='multi'){ score2=Math.max(0,score2+(correct?65+Math.floor(Math.random()*20):-20)); streak2=correct?streak2+1:0; updateHUD(); }
+/* ════════════════════════════════════════
+   OVERRIDE joinOrCreate FROM game.js
+════════════════════════════════════════ */
+window.joinOrCreate = async function () {
+  const nameInput = document.getElementById('pname-input');
+  const codeInput = document.getElementById('room-input');
+  const playerName = (nameInput?.value.trim() || 'MINER').toUpperCase();
+  const roomCode   = codeInput?.value.trim().toUpperCase() || '';
+
+  // Reset state
+  MP.roomId = null; MP.isHost = false; MP.myName = null;
+  MP.opponentName = null; MP.gameStarted = false;
+  MP.iFinished = false; MP.opponentFinalScore = null;
+  stopPoll();
+  document.getElementById('mp-player-list')?.remove();
+  document.getElementById('mp-start-btn')?.remove();
+
+  showPage('waiting');
+  showMultiStatus('Connecting...');
+
+  if (roomCode) {
+    /* ──────── JOINER ──────── */
+    document.getElementById('room-display').textContent = roomCode;
+    showMultiStatus('Looking up room ' + roomCode + '...');
+
+    const result = await dbJoin(roomCode, playerName);
+    if (!result.ok) {
+      showMultiError(result.msg);
+      return;
+    }
+
+    MP.roomId       = roomCode;
+    MP.isHost       = false;
+    MP.myName       = playerName;
+    MP.opponentName = result.room.player1_name;
+    MP.questionSeed = result.room.question_seed;
+
+    showMultiStatus('Joined! Waiting for host to start...');
+    startPoll();
+
+  } else {
+    /* ──────── HOST ──────── */
+    showMultiStatus('Creating room...');
+
+    const result = await dbCreate(playerName);
+    if (!result) return; // error shown by dbCreate
+
+    MP.roomId       = result.roomId;
+    MP.isHost       = true;
+    MP.myName       = playerName;
+    MP.questionSeed = result.seed;
+
+    document.getElementById('room-display').textContent = result.roomId;
+    showMultiStatus('Share this code. Waiting for players to join...');
+    startPoll();
+  }
 };
 
-// ─── CLEANUP ─────────────────────────────
-function cleanup() {
-  stopPoll();
-  if(MP.channel){ send('disconnect',{}); db()?.removeChannel(MP.channel); MP.channel=null; }
-  if(MP.roomId) db()?.from('rooms').update({status:'finished'}).eq('id',MP.roomId);
-  Object.assign(MP,{connected:false,started:false,iDone:false,oppScore:null,myScore:null});
-}
-window.addEventListener('beforeunload',()=>{ if(MP.connected||MP.pollTimer)cleanup(); });
+/* ════════════════════════════════════════
+   OVERRIDE simulateOpponentAnswer
+════════════════════════════════════════ */
+window.simulateOpponentAnswer = function(correct) {
+  if (mode !== 'multi') {
+    score2  = Math.max(0, score2 + (correct ? 65 + Math.floor(Math.random() * 20) : -20));
+    streak2 = correct ? streak2 + 1 : 0;
+    updateHUD();
+  }
+};
 
-})(); // end IIFE
+/* ════════════════════════════════════════
+   PATCH game.js — broadcast in-game events
+════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', function () {
+
+  const _selectAnswer = window.selectAnswer;
+  if (_selectAnswer) {
+    window.selectAnswer = function(btn, correct, q, shuffled) {
+      _selectAnswer(btn, correct, q, shuffled);
+      if (mode === 'multi' && MP.isConnected) {
+        broadcast('answer', { new_score: score1, correct, streak: streak1, player_name: myName });
+      }
+    };
+  }
+
+  const _selectBluff = window.selectBluff;
+  if (_selectBluff) {
+    window.selectBluff = function(btn, origIndex, q) {
+      _selectBluff(btn, origIndex, q);
+      if (mode === 'multi' && MP.isConnected) {
+        broadcast('answer', { new_score: score1, correct: origIndex === q.bluff, streak: streak1, player_name: myName });
+      }
+    };
+  }
+
+  const _castODVote = window.castODVote;
+  if (_castODVote) {
+    window.castODVote = function(vote) {
+      _castODVote(vote);
+      if (mode === 'multi' && MP.isConnected) broadcast('od_vote', { vote });
+    };
+  }
+
+  // Save original showResults, replace with sync version
+  const _showResults = window.showResults;
+  if (_showResults) {
+    window._originalShowResults = _showResults;
+    window.showResults = function() {
+      if (mode === 'multi' && MP.channel) {
+        notifyIFinished();
+      } else {
+        _showResults();
+      }
+    };
+  }
+
+  window.showFinalResults = doShowFinalResults;
+});
+
+/* ════════════════════════════════════════
+   UI HELPERS
+════════════════════════════════════════ */
+function showMultiStatus(msg) {
+  const el = document.getElementById('wait-msg');
+  if (el) { el.textContent = msg; el.style.color = ''; }
+}
+function showMultiError(msg) {
+  const el = document.getElementById('wait-msg');
+  if (el) { el.textContent = '⚠ ' + msg; el.style.color = 'var(--rs)'; }
+}
