@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
 </head>
 <body>
@@ -358,7 +359,7 @@
         <div style="font-family:var(--mn);font-size:11px;color:var(--txt2)" id="wait-msg">Connecting...</div>
       </div>
 
-      <!-- Player list — filled by JS -->
+      <!-- Player list — injected by JS -->
       <div id="mp-player-list" style="display:flex;flex-direction:column;gap:6px;width:100%;max-width:320px;"></div>
 
       <!-- Host-only start section (shown/hidden by JS) -->
