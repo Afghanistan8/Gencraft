@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gencraft — Multiplayer Test</title>
+  <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d0d0d; color: #e2e8f0; font-family: 'Courier New', monospace; padding: 24px; }
+    h1 { color: #4ade80; font-size: 14px; letter-spacing: .1em; margin-bottom: 20px; }
+    .panel { background: #161616; border: 1px solid #2d2d2d; padding: 16px; margin-bottom: 12px; border-radius: 4px; }
+    label { font-size: 10px; color: #888; display: block; margin-bottom: 4px; letter-spacing: .08em; }
+    input { width: 100%; padding: 8px 10px; background: #0d0d0d; border: 1px solid #333; color: #e2e8f0; font-family: monospace; font-size: 12px; margin-bottom: 10px; }
+    button { padding: 8px 18px; border: none; cursor: pointer; font-family: monospace; font-size: 11px; letter-spacing: .06em; margin-right: 8px; margin-bottom: 6px; }
+    .btn-g  { background: #4ade80; color: #000; }
+    .btn-y  { background: #fbbf24; color: #000; }
+    .btn-r  { background: #f87171; color: #000; }
+    .btn-b  { background: #60a5fa; color: #000; }
+    #log { background: #000; border: 1px solid #333; padding: 12px; height: 280px; overflow-y: auto; font-size: 11px; line-height: 1.8; }
+    .log-ok   { color: #4ade80; }
+    .log-err  { color: #f87171; }
+    .log-info { color: #fbbf24; }
+    .log-msg  { color: #60a5fa; }
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f87171; margin-right: 6px; }
+    .status-dot.ok { background: #4ade80; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    #players { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .player-tag { padding: 4px 10px; border: 1px solid #4ade80; color: #4ade80; font-size: 10px; }
+  </style>
+</head>
+<body>
+
+<h1>⛏ GENCRAFT — MULTIPLAYER CONNECTION TEST</h1>
+
+<div class="panel">
+  <label>YOUR NAME</label>
+  <input id="name-input" value="TESTER" maxlength="16" />
+  <label>ROOM CODE (leave blank to create)</label>
+  <input id="room-input" placeholder="e.g. GL4821" maxlength="8" />
+  <div>
+    <button class="btn-g" onclick="doConnect()">▶ CONNECT</button>
+    <button class="btn-r" onclick="doDisconnect()">■ DISCONNECT</button>
+    <button class="btn-b" onclick="doPing()">⚡ SEND PING</button>
+    <button class="btn-y" onclick="doStart()">⛏ SIGNAL START</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+    <div id="status-dot" class="status-dot"></div>
+    <span id="status-txt" style="font-size:11px;color:#888">Not connected</span>
+    <span style="margin-left:auto;font-size:10px;color:#555">Room: <b id="room-display" style="color:#fbbf24">—</b></span>
+  </div>
+  <label>PLAYERS IN ROOM</label>
+  <div id="players"><span style="font-size:10px;color:#555">None yet</span></div>
+</div>
+
+<div class="panel">
+  <label>EVENT LOG</label>
+  <div id="log"></div>
+  <button class="btn-r" style="margin-top:8px;font-size:10px" onclick="document.getElementById('log').innerHTML=''">CLEAR LOG</button>
+</div>
+
+<script>
+const ABLY_KEY = 'PLcYfQ.Q-j42w:gn7JJ70LbSF1whd8wp1jgMGx1geRh9_dmCmBhB187zg';
+let ablyClient = null;
+let channel    = null;
+let myName     = 'TESTER';
+let roomCode   = null;
+let isHost     = false;
+let players    = [];
+
+function log(msg, cls) {
+  const el = document.getElementById('log');
+  const ts  = new Date().toLocaleTimeString();
+  el.innerHTML += `<div class="${cls||'log-info'}">[${ts}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(txt, ok) {
+  document.getElementById('status-txt').textContent = txt;
+  document.getElementById('status-dot').className = 'status-dot' + (ok ? ' ok' : '');
+}
+
+function renderPlayers() {
+  const el = document.getElementById('players');
+  if (!players.length) { el.innerHTML = '<span style="font-size:10px;color:#555">None yet</span>'; return; }
+  el.innerHTML = players.map((p,i) =>
+    `<div class="player-tag">${p}${i===0?' 👑':''}</div>`
+  ).join('');
+}
+
+function doConnect() {
+  if (ablyClient) doDisconnect();
+
+  myName   = (document.getElementById('name-input').value.trim() || 'TESTER').toUpperCase();
+  const rc = document.getElementById('room-input').value.trim().toUpperCase();
+  isHost   = !rc;
+  roomCode = rc || ('GL' + Math.floor(1000 + Math.random() * 9000));
+
+  document.getElementById('room-display').textContent = roomCode;
+  document.getElementById('room-input').value = roomCode;
+  log('Creating Ably client...', 'log-info');
+  setStatus('Connecting...', false);
+
+  ablyClient = new Ably.Realtime({ key: ABLY_KEY, echoMessages: false });
+  channel    = ablyClient.channels.get('gencraft-' + roomCode);
+
+  ablyClient.connection.on('connected', () => {
+    log('✅ Ably connected! State: ' + ablyClient.connection.state, 'log-ok');
+    setStatus('Connected — ' + (isHost ? 'HOST' : 'JOINER'), true);
+
+    // Subscribe to all messages
+    channel.subscribe((msg) => {
+      log('📨 MSG [' + msg.name + '] from ' + (msg.data?.from||'?') + ': ' + JSON.stringify(msg.data), 'log-msg');
+      handleMsg(msg.name, msg.data || {});
+    });
+
+    if (isHost) {
+      players = [myName];
+      renderPlayers();
+      log('🏠 You are the HOST. Room code: ' + roomCode, 'log-ok');
+      log('Share this URL with others to test: ' + location.origin + location.pathname + '?room=' + roomCode, 'log-info');
+    } else {
+      log('👤 Joining as ' + myName + ' in room ' + roomCode, 'log-info');
+      pub('player_joined', { name: myName });
+    }
+  });
+
+  ablyClient.connection.on('failed', (err) => {
+    log('❌ Connection FAILED: ' + (err?.reason?.message || JSON.stringify(err)), 'log-err');
+    setStatus('FAILED', false);
+  });
+
+  ablyClient.connection.on('disconnected', () => {
+    log('⚠ Disconnected', 'log-err');
+    setStatus('Disconnected', false);
+  });
+
+  ablyClient.connection.on('suspended', () => {
+    log('⚠ Connection suspended', 'log-err');
+    setStatus('Suspended', false);
+  });
+}
+
+function pub(event, data) {
+  if (!channel) { log('No channel — connect first', 'log-err'); return; }
+  channel.publish(event, Object.assign({ from: myName }, data || {}));
+  log('📤 SENT [' + event + ']: ' + JSON.stringify(data), 'log-info');
+}
+
+function handleMsg(event, data) {
+  if (event === 'player_joined') {
+    const name = data.name || data.from;
+    if (name && !players.includes(name)) players.push(name);
+    renderPlayers();
+    if (isHost) pub('room_state', { players, host: myName });
+  }
+  if (event === 'room_state') {
+    players = data.players || [];
+    renderPlayers();
+  }
+  if (event === 'ping') {
+    log('🏓 PONG from ' + data.from, 'log-ok');
+    if (data.from !== myName) pub('pong', { reply_to: data.from });
+  }
+  if (event === 'pong') {
+    log('🏓 Got PONG from ' + data.from, 'log-ok');
+  }
+  if (event === 'game_start') {
+    log('🎮 GAME START received! Seed: ' + data.seed, 'log-ok');
+  }
+}
+
+function doPing() { pub('ping', {}); }
+
+function doStart() {
+  if (!isHost) { log('Only the host can start', 'log-err'); return; }
+  pub('game_start', { seed: Math.floor(Math.random()*1000000), host: myName });
+}
+
+function doDisconnect() {
+  if (channel)    { channel.unsubscribe(); channel = null; }
+  if (ablyClient) { ablyClient.close(); ablyClient = null; }
+  players = []; renderPlayers();
+  setStatus('Disconnected', false);
+  log('Disconnected.', 'log-err');
+}
+
+// Auto-fill room code from URL param
+const urlRoom = new URLSearchParams(location.search).get('room');
+if (urlRoom) document.getElementById('room-input').value = urlRoom.toUpperCase();
+</script>
+</body>
+</html>
