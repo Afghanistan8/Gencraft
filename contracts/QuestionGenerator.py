@@ -106,48 +106,132 @@ def _strip_fences(text: str) -> str:
     return text
 
 
+def _normalize_quotes(text: str) -> str:
+    """LLMs sometimes emit smart quotes or em-dashes that break JSON.
+    Convert them to their ASCII equivalents."""
+    replacements = {
+        "\u201c": '"',  # left double quote
+        "\u201d": '"',  # right double quote
+        "\u2018": "'",  # left single quote
+        "\u2019": "'",  # right single quote
+        "\u2014": "-",  # em dash
+        "\u2013": "-",  # en dash
+        "\u00a0": " ",  # non-breaking space
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return text
+
+
+def _extract_objects_walking(text: str) -> list:
+    """Extract JSON objects one at a time by walking the bracket structure.
+    Tolerates malformed objects in the middle by skipping them. This is the
+    fallback when strict json.loads on the whole array fails."""
+    objects = []
+    i = 0
+    n = len(text)
+    while i < n:
+        # Find next '{'
+        if text[i] != "{":
+            i += 1
+            continue
+        # Walk until balanced
+        depth = 0
+        j = i
+        in_string = False
+        escape = False
+        while j < n:
+            ch = text[j]
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"' and not escape:
+                in_string = not in_string
+            elif not in_string:
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        # Try to parse this object
+                        candidate = text[i:j + 1]
+                        try:
+                            obj = json.loads(candidate)
+                            objects.append(obj)
+                        except Exception:
+                            pass  # skip malformed object
+                        i = j + 1
+                        break
+            j += 1
+        else:
+            # ran out of text without closing
+            break
+    return objects
+
+
 def _extract_json_array(text: str) -> list:
+    """Try multiple parsing strategies, tolerant of common LLM malformations."""
     text = _strip_fences(text)
+    text = _normalize_quotes(text)
+
+    # Strategy 1: strict parse of [ ... ]
     start = text.find("[")
     end = text.rfind("]")
-    if start == -1 or end == -1 or end <= start:
-        raise ValueError("No JSON array found in LLM output")
-    parsed = json.loads(text[start:end + 1])
-    if not isinstance(parsed, list):
-        raise ValueError("Parsed value is not a list")
-    return parsed
+    if start != -1 and end != -1 and end > start:
+        try:
+            parsed = json.loads(text[start:end + 1])
+            if isinstance(parsed, list):
+                return parsed
+        except Exception:
+            pass  # fall through to strategy 2
+
+    # Strategy 2: walk the structure and extract individual objects
+    walked = _extract_objects_walking(text)
+    if walked:
+        return walked
+
+    raise ValueError("Could not extract any JSON objects from LLM output")
 
 
 def _validate_and_clean(qs: list, expected_count: int) -> list:
+    """Validate. Tolerant: drop bad entries instead of failing the whole batch
+    when possible. Raises only if we end up with too few good entries."""
     if not isinstance(qs, list):
         raise ValueError("questions must be a list")
-    if len(qs) != expected_count:
-        raise ValueError("question count mismatch")
 
     cleaned = []
     for i, q in enumerate(qs):
+        # Skip silently — leader can rotate, and one bad apple shouldn't fail.
         if not isinstance(q, dict):
-            raise ValueError("question " + str(i) + " is not an object")
-        for key in ("category", "question", "options", "correct"):
-            if key not in q:
-                raise ValueError("question " + str(i) + " missing key " + key)
+            continue
+        if not all(k in q for k in ("category", "question", "options", "correct")):
+            continue
         if q["category"] not in VALID_CATEGORIES:
-            raise ValueError("question " + str(i) + " has invalid category")
+            continue
         if not isinstance(q["options"], list) or len(q["options"]) != 4:
-            raise ValueError("question " + str(i) + " must have exactly 4 options")
+            continue
         if not all(isinstance(o, str) and len(o) > 0 for o in q["options"]):
-            raise ValueError("question " + str(i) + " has empty/non-string options")
+            continue
         if not isinstance(q["correct"], int) or q["correct"] < 0 or q["correct"] > 3:
-            raise ValueError("question " + str(i) + " has invalid 'correct' index")
+            continue
         if not isinstance(q["question"], str) or len(q["question"].strip()) < 8:
-            raise ValueError("question " + str(i) + " has empty/too-short text")
+            continue
         cleaned.append({
             "category": q["category"],
             "question": q["question"].strip(),
             "options": [o.strip() for o in q["options"]],
             "correct": q["correct"],
         })
-    return cleaned
+
+    # We need AT LEAST expected_count to satisfy the request. If we have more,
+    # trim. If we have fewer, raise so OD can rotate the leader.
+    if len(cleaned) < expected_count:
+        raise ValueError(
+            "got " + str(len(cleaned)) + " valid questions, need " + str(expected_count)
+        )
+    return cleaned[:expected_count]
+
 
 
 # ----------------------------------------------------------------------------

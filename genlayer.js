@@ -22,14 +22,14 @@ import { TransactionStatus } from 'https://esm.sh/genlayer-js@latest/types';
 // REPLACE this with the address printed by the GenLayer Studio after deploying
 // contracts/QuestionGenerator.py. The old leaderboard contract is no longer
 // used — this single contract handles questions AND leaderboard.
-const CONTRACT_ADDRESS = '0x5c2e9A88a2b821EF54b9944396b56ea45df3e9BB';
+const CONTRACT_ADDRESS = '0x45bFf3e67466d3CBf6f7b0c41cb4e630eC253f81';
 
 // Studio testnet is the default chain for development. Swap to simulator if
 // you're running everything locally.
 const CHAIN = studionet;
 
 // How many questions per match. Must match what the contract enforces (5-15).
-const QUESTIONS_PER_MATCH = 10;
+const QUESTIONS_PER_MATCH = 5;  // smaller batch = much higher LLM JSON success rate
 
 // How long we're willing to wait for question generation before giving up
 // and offering the user a retry/fallback. Generation involves multiple
