@@ -29,7 +29,7 @@ const CONTRACT_ADDRESS = '0x45bFf3e67466d3CBf6f7b0c41cb4e630eC253f81';
 const CHAIN = studionet;
 
 // How many questions per match. Must match what the contract enforces (5-15).
-const QUESTIONS_PER_MATCH = 5;  // smaller batch = much higher LLM JSON success rate
+const QUESTIONS_PER_MATCH = 10;  // ask for more since gameplay tolerates partial AI results now
 
 // How long we're willing to wait for question generation before giving up
 // and offering the user a retry/fallback. Generation involves multiple
@@ -208,6 +208,92 @@ async function generateQuestions(seed, topic, onProgress = () => {}) {
   return questions;
 }
 
+/**
+ * Background-friendly version of generateQuestions.
+ *
+ * Returns IMMEDIATELY with { txHash, questionsPromise }. The caller can:
+ *   - use txHash right away (e.g. for an explorer link to show in results)
+ *   - await questionsPromise later, whenever it's convenient (e.g. between
+ *     gameplay rounds), to swap AI questions into a running game
+ *
+ * If submission fails, the returned object has txHash=null and questionsPromise
+ * resolves to null (never rejects). This makes it safe to fire and forget.
+ */
+async function startBackgroundGeneration(seed, topic) {
+  const result = {
+    txHash: null,
+    seed,
+    topic,
+    questionsPromise: null,
+    error: null,
+  };
+
+  let resolveQuestions;
+  result.questionsPromise = new Promise(resolve => { resolveQuestions = resolve; });
+
+  // Submit and resolve in the background. Caller doesn't await this.
+  (async () => {
+    try {
+      const c = await ensureClient();
+
+      // Cache check first — same idempotency as foreground version.
+      const existing = await getQuestionsBySeed(seed);
+      if (existing && existing.length > 0) {
+        console.log('[GL bg] cache hit for seed:', seed);
+        resolveQuestions(existing);
+        return;
+      }
+
+      // Submit. This may take 10-60s on its own.
+      try {
+        result.txHash = await c.writeContract({
+          address: CONTRACT_ADDRESS,
+          functionName: 'generate_questions',
+          args: [seed, topic, QUESTIONS_PER_MATCH],
+          value: 0n,
+        });
+        console.log('[GL bg] tx submitted:', result.txHash);
+      } catch (err) {
+        result.error = String(err.message || err);
+        console.warn('[GL bg] tx submit failed:', result.error);
+        resolveQuestions(null);
+        return;
+      }
+
+      // Poll for result.
+      const startedAt = Date.now();
+      let pollAttempt = 0;
+      while (true) {
+        pollAttempt++;
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > GENERATION_TIMEOUT_MS) {
+          console.warn('[GL bg] timed out after ' + Math.round(elapsed/1000) + 's');
+          result.error = 'Generation timed out (background)';
+          resolveQuestions(null);
+          return;
+        }
+        try {
+          const fetched = await getQuestionsBySeed(seed);
+          if (fetched && fetched.length > 0) {
+            console.log('[GL bg] questions ready after ' + Math.round(elapsed/1000) + 's');
+            resolveQuestions(fetched);
+            return;
+          }
+        } catch (e) {
+          // ignore transient read errors
+        }
+        await new Promise(r => setTimeout(r, 2500));
+      }
+    } catch (err) {
+      result.error = String(err.message || err);
+      console.warn('[GL bg] outer error:', result.error);
+      resolveQuestions(null);
+    }
+  })();
+
+  return result;
+}
+
 async function getQuestionsBySeed(seed) {
   const c = await ensureClient();
   try {
@@ -273,6 +359,7 @@ window.GL = {
   setManualAddress,
   getAddress,
   generateQuestions,
+  startBackgroundGeneration,
   getQuestionsBySeed,
   submitResult,
   getRecentResults,

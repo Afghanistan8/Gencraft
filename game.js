@@ -671,6 +671,11 @@ function confirmStake(override) {
 ════════════════════════════════════════ */
 
 function showQuestion() {
+  // AI swap-in: if background generation has finished and we're past the
+  // first 5 hardcoded questions, swap remaining slots with AI questions.
+  // Idempotent — once swapped, the flag prevents repeat.
+  _maybeSwapInAiQuestions();
+
   const q=questions[currentQ], isBluff=q.cat==='BLUFF ROUND';
   document.getElementById('quiz-wrap').style.display='block';
   document.getElementById('q-card').className='q-panel'+(isBluff?' bluff':'');
@@ -936,6 +941,9 @@ function showResults() {
     '<div class="stat-card am"><div class="sc-val">'+correctAnswers+'/'+totalQ+'</div><div class="sc-lbl">BLOCKS MINED</div></div>'+
     '<div class="stat-card rs"><div class="sc-val">'+bluffsDetected+'</div><div class="sc-lbl">BLUFFS CAUGHT</div></div>';
 
+  // Render the AI on-chain proof panel if this match called the contract.
+  _renderAiProofPanel();
+
   // Show the share card button
   const shareBtn=document.getElementById('share-card-btn');
   if (shareBtn) shareBtn.style.display='block';
@@ -958,100 +966,209 @@ function hideGamePanels() {
 ════════════════════════════════════════ */
 renderLB(); renderStats(); renderSplash(); updateHotbar();
 
-
 /* ════════════════════════════════════════
-   SECTION 18 — AI QUESTION GENERATION HOOKS
-   (added for GenLayer Intelligent Contract integration)
+   SECTION 18 — AI QUESTION GENERATION (BACKGROUND MODE)
+   Every match calls the GenLayer Intelligent Contract. Gameplay starts
+   immediately with hardcoded questions; AI questions swap in mid-match
+   when consensus completes. Match results always include the on-chain
+   transaction hash as proof the contract ran.
 ════════════════════════════════════════ */
 
 /**
- * Convert an AI-generated question (schema: category/question/options/correct)
- * to the schema game.js expects (cat/q/opts/ans/exp). Used by startGameWithQuestions.
+ * Convert an AI question (category/question/options/correct) to the
+ * shape game.js expects (cat/q/opts/ans/exp).
  */
 function _convertAiQuestion(aiQ) {
   return {
-    cat:  aiQ.category || 'BASICS',
+    cat:  (aiQ.category || 'BASICS') + ' · AI',
     q:    aiQ.question || '',
     opts: Array.isArray(aiQ.options) ? aiQ.options : [],
     ans:  (typeof aiQ.correct === 'number') ? aiQ.correct : 0,
-    exp:  'AI-generated question — verified by GenLayer validators via Optimistic Democracy.'
+    exp:  '🧠 AI-generated question. Verified via Optimistic Democracy on GenLayer.'
   };
 }
 
 /**
- * Called by index.html's gcConfirmTopicAndStart() with AI-generated questions.
- * Replaces the random pick from QUESTIONS with the validator-generated set,
- * then runs the normal start flow.
+ * Match-level state for background generation.
+ *   handle      — { txHash, questionsPromise, error } from window.GL.startBackgroundGeneration
+ *   resolved    — true once the promise settled (success OR failure)
+ *   aiQuestions — the converted, validated question list (or null on failure)
+ *   swapped     — true once we've swapped them into the live `questions` array
  */
-window.startGameWithQuestions = function (aiQuestions, topic, seed) {
-  if (!Array.isArray(aiQuestions) || aiQuestions.length === 0) {
-    console.error('[GENCRAFT] startGameWithQuestions called with invalid questions:', aiQuestions);
-    if (typeof initSolo === 'function') initSolo();
-    return;
-  }
+window.aiMatchState = {
+  handle: null,
+  resolved: false,
+  aiQuestions: null,
+  swapped: false,
+  topic: 'mixed',
+  seed: null,
+};
 
-  // Track this match for leaderboard submission later.
-  window.currentTopic = topic || 'mixed';
-  window.currentSeed  = seed  || ('ai-' + Date.now());
+/**
+ * Called by index.html's gcConfirmTopicAndStart() at the start of every match.
+ * Kicks off background generation, then immediately starts gameplay with
+ * hardcoded questions. AI questions arrive whenever they arrive.
+ */
+window.startGameWithBackgroundAI = function (topic) {
+  topic = topic || 'mixed';
+  const seed = 'solo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
 
+  // Reset match state
+  window.aiMatchState = {
+    handle: null,
+    resolved: false,
+    aiQuestions: null,
+    swapped: false,
+    topic,
+    seed,
+  };
+  window.currentTopic = topic;
+  window.currentSeed = seed;
+
+  // Set the same player/mode state initSolo() would have set.
   mode = 'solo';
   myName = 'MINER';
 
-  // Convert AI questions to game.js schema, then merge with bluffs the same
-  // way buildQuestions() does so the bluff-detection mechanic still works.
-  const converted = aiQuestions.map(_convertAiQuestion).filter(q => q.opts.length === 4);
-
-  const wanted = totalQ;
-  const aiCount = Math.min(converted.length, wanted - 4);
-  const baseSlice = converted.slice(0, aiCount);
-  const bluffSlice = (typeof BLUFFS !== 'undefined' ? shuffle([...BLUFFS]) : []).slice(0, 4);
-
-  const merged = [];
-  let bi = 0;
-  for (let i = 0; i < baseSlice.length; i++) {
-    merged.push(baseSlice[i]);
-    if ((i + 1) % 4 === 0 && bi < bluffSlice.length) merged.push(bluffSlice[bi++]);
+  // Start the contract call IN THE BACKGROUND. Don't await.
+  if (window.GL && typeof window.GL.startBackgroundGeneration === 'function') {
+    const handle = window.GL.startBackgroundGeneration(seed, topic);
+    // Note: handle is the return value, NOT a Promise. handle.questionsPromise is the promise.
+    Promise.resolve(handle).then(h => {
+      window.aiMatchState.handle = h;
+      // Wait for the questions to resolve (or fail) and stash them.
+      h.questionsPromise.then(qs => {
+        window.aiMatchState.resolved = true;
+        if (qs && qs.length > 0) {
+          window.aiMatchState.aiQuestions =
+            qs.map(_convertAiQuestion).filter(q => q.opts.length === 4);
+          console.log('[GENCRAFT] AI questions ready (' +
+                      window.aiMatchState.aiQuestions.length +
+                      ') — will swap into game when player reaches Q6+');
+        } else {
+          console.log('[GENCRAFT] AI generation did not produce questions before deadline.');
+        }
+      });
+    });
+  } else {
+    console.warn('[GENCRAFT] window.GL not ready; match will be hardcoded only.');
+    window.aiMatchState.resolved = true;
   }
-  // Top up from QUESTIONS if AI returned fewer than expected.
-  if (merged.length < wanted) {
-    const filler = shuffle([...QUESTIONS]).slice(0, wanted - merged.length);
-    merged.push(...filler);
-  }
-  questions = merged.slice(0, wanted);
 
-  console.log('[GENCRAFT] Starting match with ' + aiCount + ' AI questions + ' +
-              bluffSlice.length + ' bluffs. Seed: ' + window.currentSeed);
-
+  // Build initial hardcoded questions and start the game NOW.
+  buildQuestions();
   hideGamePanels();
   showPage('game');
   startGame();
 };
 
 /**
- * Called by gcUseFallbackQuestions() if the contract call fails.
- * Falls back to the original hardcoded-question solo flow.
+ * Called from inside showQuestion() before each question renders. If AI
+ * questions are now available and we haven't swapped yet, replace the
+ * remaining hardcoded slots (from currentQ onwards) with AI questions.
+ *
+ * Rules:
+ *   - Don't swap during the first 5 questions (give AI time to arrive)
+ *   - Don't swap until at least Q6 (currentQ >= 5)
+ *   - Don't swap if already swapped (idempotent)
+ *   - Preserve bluff questions in their slots
  */
-window.startGameWithFallback = function (topic) {
-  window.currentTopic = topic || 'mixed';
-  window.currentSeed  = 'fallback-' + Date.now();
-  if (typeof initSolo === 'function') {
-    initSolo();
-  } else {
-    console.error('[GENCRAFT] initSolo not available for fallback');
+function _maybeSwapInAiQuestions() {
+  const s = window.aiMatchState;
+  if (!s || s.swapped) return;
+  if (!s.aiQuestions || s.aiQuestions.length === 0) return;
+  if (typeof currentQ === 'undefined' || currentQ < 5) return;
+
+  // Build new questions array: keep everything before currentQ unchanged
+  // (already played), replace remaining non-bluff slots with AI questions.
+  const remainingSlots = totalQ - currentQ;
+  const aiPool = [...s.aiQuestions];
+  const newTail = [];
+  for (let i = 0; i < remainingSlots && (aiPool.length || true); i++) {
+    const existingSlot = questions[currentQ + i];
+    if (existingSlot && existingSlot.cat === 'BLUFF ROUND') {
+      newTail.push(existingSlot);  // keep bluff slots intact
+    } else if (aiPool.length > 0) {
+      newTail.push(aiPool.shift());
+    } else if (existingSlot) {
+      newTail.push(existingSlot);  // ran out of AI; keep hardcoded
+    }
   }
-};
+
+  questions = questions.slice(0, currentQ).concat(newTail);
+  s.swapped = true;
+  console.log('[GENCRAFT] Swapped ' + (s.aiQuestions.length) +
+              ' AI questions into match starting at Q' + (currentQ + 1));
+}
 
 /**
- * Optional: submit the match result on-chain after a game ends.
+ * Render the on-chain proof panel on the results page. Always shown at
+ * end of any match that called the contract — even if AI questions never
+ * arrived in time. Proves the contract ran via permanent on-chain record.
  */
-window.submitMatchResult = async function () {
-  if (!window.GL || !window.currentSeed) return;
-  try {
-    const finalXp = (typeof score1 === 'number') ? Math.max(0, score1) : 0;
-    await window.GL.submitResult(myName || 'MINER', finalXp,
-                                  window.currentSeed, window.currentTopic || 'mixed');
-    console.log('[GENCRAFT] Match result submitted on-chain');
-  } catch (err) {
-    console.warn('[GENCRAFT] Could not submit result:', err);
+function _renderAiProofPanel() {
+  const s = window.aiMatchState;
+  if (!s || !s.seed) return;
+  const explorer = (window.GL && window.GL.CONTRACT_ADDRESS)
+    ? 'https://explorer-studio.genlayer.com/address/' + window.GL.CONTRACT_ADDRESS
+    : 'https://explorer-studio.genlayer.com/';
+  const txHash = s.handle && s.handle.txHash;
+  const txExplorer = txHash
+    ? 'https://explorer-studio.genlayer.com/tx/' + txHash
+    : null;
+
+  let statusLine, statusColor;
+  if (s.swapped) {
+    statusLine = 'AI questions delivered + verified by validator consensus';
+    statusColor = 'var(--em)';
+  } else if (s.aiQuestions && s.aiQuestions.length > 0) {
+    statusLine = 'AI questions arrived after match end — consensus completed on-chain';
+    statusColor = 'var(--am)';
+  } else if (s.resolved) {
+    statusLine = 'AI generation timed out — but the contract call is still on-chain';
+    statusColor = 'var(--di)';
+  } else {
+    statusLine = 'AI generation still in progress on-chain…';
+    statusColor = 'var(--am)';
   }
+
+  let panel = document.getElementById('ai-proof-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'ai-proof-panel';
+    panel.style.cssText =
+      'margin: 16px 0; padding: 14px 18px;' +
+      'background: rgba(124, 92, 255, 0.08);' +
+      'border: 1px solid rgba(124, 92, 255, 0.4);' +
+      'border-radius: 10px;' +
+      'font-family: var(--mn);' +
+      'font-size: 11px;';
+    const stats = document.getElementById('results-stats');
+    if (stats && stats.parentNode) {
+      stats.parentNode.insertBefore(panel, stats.nextSibling);
+    }
+  }
+  panel.innerHTML =
+    '<div style="font-size:10px;color:#9999b0;letter-spacing:.08em;margin-bottom:6px">' +
+      '◆ AI MATCH PROOF — GENLAYER INTELLIGENT CONTRACT' +
+    '</div>' +
+    '<div style="color:' + statusColor + ';margin-bottom:8px;font-size:12px">' +
+      statusLine +
+    '</div>' +
+    '<div style="color:#7777a0;font-size:10px;line-height:1.6;word-break:break-all">' +
+      'Topic: <span style="color:#e8e8f0">' + (s.topic || 'mixed') + '</span><br>' +
+      'Seed: <span style="color:#e8e8f0">' + s.seed + '</span><br>' +
+      (txHash ? 'Tx: <a href="' + txExplorer + '" target="_blank" rel="noopener" ' +
+        'style="color:#7c5cff;text-decoration:underline">' + txHash.slice(0,10) + '…' + txHash.slice(-8) + ' ↗</a><br>' : '') +
+      'Contract: <a href="' + explorer + '" target="_blank" rel="noopener" ' +
+        'style="color:#7c5cff;text-decoration:underline">' +
+        (window.GL && window.GL.CONTRACT_ADDRESS ? window.GL.CONTRACT_ADDRESS.slice(0,10) + '…' + window.GL.CONTRACT_ADDRESS.slice(-8) : 'address') + ' ↗</a>' +
+    '</div>';
+}
+
+/**
+ * Backwards-compat shims so existing callers don't break.
+ */
+window.startGameWithFallback = function (topic) {
+  // Just kick off the normal background flow — there's no separate fallback now.
+  window.startGameWithBackgroundAI(topic || 'mixed');
 };

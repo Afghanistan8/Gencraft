@@ -692,7 +692,7 @@
       <div class="px-title" style="font-size:14px;margin-bottom:6px">CHOOSE MATCH TOPIC</div>
       <div class="px-sub" style="font-family:var(--mn);font-size:11px;color:#9999b0;line-height:1.6;margin-bottom:8px">
         AI validators will generate fresh questions on this topic via Optimistic Democracy.<br>
-        Every match is unique — no two games are the same.
+        Match starts instantly — AI questions swap in mid-game once consensus is reached.
       </div>
 
       <div class="gc-topic-grid" style="margin-left:auto;margin-right:auto">
@@ -725,7 +725,7 @@
 
       <div class="btn-row" style="margin-top:8px">
         <button class="btn ghost" onclick="showPage('splash')">← BACK</button>
-        <button class="btn em" onclick="window.gcConfirmTopicAndStart()">⛏ GENERATE QUESTIONS</button>
+        <button class="btn em" onclick="window.gcConfirmTopicAndStart()">⛏ START MINING</button>
       </div>
     </div>
   </div>
@@ -859,43 +859,41 @@
     };
 
     // Called by the GENERATE QUESTIONS button on the topic page.
+    // NEW BEHAVIOR: kick off background AI generation, start gameplay
+    // immediately with hardcoded questions. AI questions swap in mid-match
+    // when consensus completes (handled by game.js).
     window.gcConfirmTopicAndStart = async function () {
       gcClearError();
-      showPage('validators');
-      gcSetStage('connecting');
 
       if (!window.GL) {
-        gcShowError('GenLayer client not loaded yet. Please wait a few seconds and click Retry.');
+        // GL not ready yet — still let them play with hardcoded.
+        console.warn('[GENCRAFT] GL not ready, starting hardcoded-only match.');
+        if (typeof window.startGameWithBackgroundAI === 'function') {
+          window.startGameWithBackgroundAI(gcSelectedTopic);
+        }
         return;
       }
 
-      try {
-        if (gcMode === 'multi') {
-          // Multiplayer: this needs to first put the host in the multi setup flow.
-          // For now, treat it the same as solo (single-player AI questions).
-          // TODO: integrate with initMulti / room creation.
-          if (typeof window.MP_API !== 'undefined' && window.MP && window.MP.isHost) {
-            await window.MP_API.hostStartMatch(gcSelectedTopic);
-            // Multiplayer event handlers (below) will drive the rest.
-            return;
-          }
-          // Fall through to solo if MP isn't initialized (host hasn't created a room yet)
+      // Multiplayer host path — keep the validator-screen flow because
+      // joiners need to wait for the host's seed before they can start.
+      if (gcMode === 'multi' && typeof window.MP_API !== 'undefined' &&
+          window.MP && window.MP.isHost) {
+        showPage('validators');
+        gcSetStage('connecting');
+        try {
+          await window.MP_API.hostStartMatch(gcSelectedTopic);
+        } catch (err) {
+          console.error('[GENCRAFT] MP host start error:', err);
+          gcShowError('Multiplayer start failed: ' + (err.message || err));
         }
+        return;
+      }
 
-        // SOLO path
-        const seed = 'solo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
-        const questions = await window.GL.generateQuestions(seed, gcSelectedTopic, gcSetStage);
-        gcSetStage('ready');
-
-        // Hand off to game.js
-        if (typeof window.startGameWithQuestions === 'function') {
-          window.startGameWithQuestions(questions, gcSelectedTopic, seed);
-        } else {
-          gcShowError('Internal: window.startGameWithQuestions is not defined in game.js. Add the wrapper as instructed.');
-        }
-      } catch (err) {
-        console.error('[GENCRAFT] Generation error:', err);
-        gcShowError('Generation failed: ' + (err.message || err) + '. The testnet may be busy, or the contract address may be wrong. Try again, or use hardcoded questions.');
+      // SOLO path: instant start, AI in background.
+      if (typeof window.startGameWithBackgroundAI === 'function') {
+        window.startGameWithBackgroundAI(gcSelectedTopic);
+      } else {
+        gcShowError('Internal: window.startGameWithBackgroundAI is not defined.');
       }
     };
 
