@@ -154,32 +154,55 @@ async function generateQuestions(seed, topic, onProgress = () => {}) {
 
   onProgress('validators_thinking');
 
-  // Wait for consensus. We use ACCEPTED rather than FINALIZED because
-  // FINALIZED waits for the appeal window to close (~minutes), which is too
-  // long for a game start. ACCEPTED means OD has converged.
-  try {
-    await Promise.race([
-      c.waitForTransactionReceipt({
-        hash: txHash,
-        status: TransactionStatus.ACCEPTED,
-        retries: 150,
-        interval: 2000,  // poll every 2 s for up to 5 min
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Generation timed out')), GENERATION_TIMEOUT_MS)
-      ),
-    ]);
-  } catch (err) {
-    throw new Error(`Validator consensus failed: ${err.message || err}`);
+  // Strategy: instead of waiting for a transaction RECEIPT (which is flaky
+  // on Studio's RPC — often returns "not found" even after success), we poll
+  // the contract's STATE directly via getQuestionsBySeed. Once the leader's
+  // result has been stored, the questions become readable. This bypasses
+  // the receipt mechanism entirely.
+  //
+  // The contract is idempotent — `if seed in self.questions_by_seed: return`
+  // — so repeated polls are safe and cheap.
+  const startedAt = Date.now();
+  let pollAttempt = 0;
+  let questions = null;
+
+  while (true) {
+    pollAttempt++;
+    const elapsed = Date.now() - startedAt;
+
+    if (elapsed > GENERATION_TIMEOUT_MS) {
+      throw new Error(
+        `Generation timed out after ${Math.round(elapsed / 1000)}s. ` +
+        `The transaction may still finalize on-chain — check the explorer at ` +
+        `https://explorer-studio.genlayer.com/address/${CONTRACT_ADDRESS}`
+      );
+    }
+
+    try {
+      const fetched = await getQuestionsBySeed(seed);
+      if (fetched && fetched.length > 0) {
+        questions = fetched;
+        console.log(
+          `[GL] Questions ready after ${Math.round(elapsed / 1000)}s ` +
+          `(${pollAttempt} poll(s)).`
+        );
+        break;
+      }
+    } catch (err) {
+      // Silent — getQuestionsBySeed already logs warnings, and a transient
+      // read failure shouldn't kill the whole generation.
+    }
+
+    // Update UI roughly every 10s so the user sees progress.
+    if (pollAttempt % 5 === 1 && pollAttempt > 1) {
+      console.log(`[GL] Still waiting for consensus (${Math.round(elapsed / 1000)}s elapsed)...`);
+    }
+
+    // Wait 2 seconds before polling again.
+    await new Promise(r => setTimeout(r, 2000));
   }
 
   onProgress('consensus_reached');
-
-  // Read the consensus result.
-  const questions = await getQuestionsBySeed(seed);
-  if (!questions || questions.length === 0) {
-    throw new Error('Contract accepted the transaction but returned no questions.');
-  }
 
   onProgress('ready');
   return questions;
@@ -255,48 +278,6 @@ window.GL = {
   getRecentResults,
   CONTRACT_ADDRESS,
   QUESTIONS_PER_MATCH,
-};
-
-// ----------------------------------------------------------------------------
-// Global wallet button shim
-//
-// The CONNECT WALLET button in index.html calls connectWallet() at the global
-// scope. Since genlayer.js is now a module, that name isn't visible without
-// this bridge. Also updates the button text on success/error.
-// ----------------------------------------------------------------------------
-
-function _updateWalletButton(text, ok) {
-  const btn = document.getElementById('wallet-connect-btn');
-  if (!btn) return;
-  btn.textContent = text;
-  if (ok) {
-    btn.style.color = '#4ce0c5';
-    btn.style.borderColor = '#4ce0c5';
-  }
-}
-
-window.connectWallet = async function () {
-  try {
-    _updateWalletButton('CONNECTING…', false);
-    const addr = await connectWallet();
-    const short = addr.slice(0, 6) + '…' + addr.slice(-4);
-    _updateWalletButton(short.toUpperCase(), true);
-    console.log('[GL] Wallet connected:', addr);
-    return addr;
-  } catch (err) {
-    console.error('[GL] Wallet connect failed:', err);
-    _updateWalletButton('CONNECT WALLET', false);
-    // Show a friendly hint for the most common case.
-    const msg = err && err.message ? err.message : String(err);
-    if (msg.includes('No wallet detected')) {
-      alert('No wallet found. Install MetaMask or another EVM wallet, then refresh.');
-    } else if (msg.includes('user rejected') || msg.includes('User rejected')) {
-      // User clicked cancel — silent is fine.
-    } else {
-      alert('Wallet connect failed: ' + msg);
-    }
-    throw err;
-  }
 };
 
 // Signal readiness so multiplayer.js / game.js can wait for us.
