@@ -1,0 +1,7 @@
+.env
+setup-database.js
+node_modules/
+prisma/
+package.json
+package-lock.json
+*.ps1

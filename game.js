@@ -957,3 +957,101 @@ function hideGamePanels() {
    INIT
 ════════════════════════════════════════ */
 renderLB(); renderStats(); renderSplash(); updateHotbar();
+
+
+/* ════════════════════════════════════════
+   SECTION 18 — AI QUESTION GENERATION HOOKS
+   (added for GenLayer Intelligent Contract integration)
+════════════════════════════════════════ */
+
+/**
+ * Convert an AI-generated question (schema: category/question/options/correct)
+ * to the schema game.js expects (cat/q/opts/ans/exp). Used by startGameWithQuestions.
+ */
+function _convertAiQuestion(aiQ) {
+  return {
+    cat:  aiQ.category || 'BASICS',
+    q:    aiQ.question || '',
+    opts: Array.isArray(aiQ.options) ? aiQ.options : [],
+    ans:  (typeof aiQ.correct === 'number') ? aiQ.correct : 0,
+    exp:  'AI-generated question — verified by GenLayer validators via Optimistic Democracy.'
+  };
+}
+
+/**
+ * Called by index.html's gcConfirmTopicAndStart() with AI-generated questions.
+ * Replaces the random pick from QUESTIONS with the validator-generated set,
+ * then runs the normal start flow.
+ */
+window.startGameWithQuestions = function (aiQuestions, topic, seed) {
+  if (!Array.isArray(aiQuestions) || aiQuestions.length === 0) {
+    console.error('[GENCRAFT] startGameWithQuestions called with invalid questions:', aiQuestions);
+    if (typeof initSolo === 'function') initSolo();
+    return;
+  }
+
+  // Track this match for leaderboard submission later.
+  window.currentTopic = topic || 'mixed';
+  window.currentSeed  = seed  || ('ai-' + Date.now());
+
+  mode = 'solo';
+  myName = 'MINER';
+
+  // Convert AI questions to game.js schema, then merge with bluffs the same
+  // way buildQuestions() does so the bluff-detection mechanic still works.
+  const converted = aiQuestions.map(_convertAiQuestion).filter(q => q.opts.length === 4);
+
+  const wanted = totalQ;
+  const aiCount = Math.min(converted.length, wanted - 4);
+  const baseSlice = converted.slice(0, aiCount);
+  const bluffSlice = (typeof BLUFFS !== 'undefined' ? shuffle([...BLUFFS]) : []).slice(0, 4);
+
+  const merged = [];
+  let bi = 0;
+  for (let i = 0; i < baseSlice.length; i++) {
+    merged.push(baseSlice[i]);
+    if ((i + 1) % 4 === 0 && bi < bluffSlice.length) merged.push(bluffSlice[bi++]);
+  }
+  // Top up from QUESTIONS if AI returned fewer than expected.
+  if (merged.length < wanted) {
+    const filler = shuffle([...QUESTIONS]).slice(0, wanted - merged.length);
+    merged.push(...filler);
+  }
+  questions = merged.slice(0, wanted);
+
+  console.log('[GENCRAFT] Starting match with ' + aiCount + ' AI questions + ' +
+              bluffSlice.length + ' bluffs. Seed: ' + window.currentSeed);
+
+  hideGamePanels();
+  showPage('game');
+  startGame();
+};
+
+/**
+ * Called by gcUseFallbackQuestions() if the contract call fails.
+ * Falls back to the original hardcoded-question solo flow.
+ */
+window.startGameWithFallback = function (topic) {
+  window.currentTopic = topic || 'mixed';
+  window.currentSeed  = 'fallback-' + Date.now();
+  if (typeof initSolo === 'function') {
+    initSolo();
+  } else {
+    console.error('[GENCRAFT] initSolo not available for fallback');
+  }
+};
+
+/**
+ * Optional: submit the match result on-chain after a game ends.
+ */
+window.submitMatchResult = async function () {
+  if (!window.GL || !window.currentSeed) return;
+  try {
+    const finalXp = (typeof score1 === 'number') ? Math.max(0, score1) : 0;
+    await window.GL.submitResult(myName || 'MINER', finalXp,
+                                  window.currentSeed, window.currentTopic || 'mixed');
+    console.log('[GENCRAFT] Match result submitted on-chain');
+  } catch (err) {
+    console.warn('[GENCRAFT] Could not submit result:', err);
+  }
+};

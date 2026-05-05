@@ -1,0 +1,436 @@
+<!-- ============================================================
+     PATCH FOR index.html
+     ============================================================
+     This file contains the new HTML, CSS, and JS you need to add
+     to index.html to support AI-generated questions.
+
+     Three things to do:
+       1. Change <script src="genlayer.js"> to type="module"
+       2. Add the CSS to <style> (or styles.css)
+       3. Add the two new <div class="page"> blocks before </body>
+       4. Add the JS handlers anywhere AFTER multiplayer.js loads
+
+     Search for "PATCH STEP" markers below.
+     ============================================================ -->
+
+
+<!-- ===== PATCH STEP 1: SCRIPT TAG CHANGE ===== -->
+<!-- In your <head> or before </body>, change this:
+       <script src="genlayer.js"></script>
+     To this:
+       <script type="module" src="genlayer.js"></script>
+
+     Keep the load order: genlayer.js → game.js → multiplayer.js
+     The 'gl-ready' event fires when genlayer.js finishes async loading.
+-->
+
+
+<!-- ===== PATCH STEP 2: CSS ===== -->
+<style>
+  /* Topic picker */
+  .topic-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin: 24px 0;
+  }
+  .topic-card {
+    background: rgba(20, 20, 30, 0.7);
+    border: 2px solid #3a3a4a;
+    border-radius: 12px;
+    padding: 18px 14px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: center;
+  }
+  .topic-card:hover {
+    border-color: #7c5cff;
+    transform: translateY(-2px);
+  }
+  .topic-card.selected {
+    border-color: #7c5cff;
+    background: rgba(124, 92, 255, 0.15);
+    box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.3);
+  }
+  .topic-card .topic-icon {
+    font-size: 28px;
+    margin-bottom: 8px;
+  }
+  .topic-card .topic-name {
+    font-weight: 700;
+    color: #e8e8f0;
+    margin-bottom: 4px;
+  }
+  .topic-card .topic-desc {
+    font-size: 12px;
+    color: #9999b0;
+    line-height: 1.4;
+  }
+
+  /* Validator convening screen */
+  #validatorScreen {
+    text-align: center;
+    padding: 40px 20px;
+  }
+  .validator-title {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(90deg, #7c5cff, #4ce0c5);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 8px;
+  }
+  .validator-subtitle {
+    color: #9999b0;
+    font-size: 14px;
+    margin-bottom: 32px;
+  }
+  .validator-ring {
+    position: relative;
+    width: 240px;
+    height: 240px;
+    margin: 0 auto 32px;
+  }
+  .validator-node {
+    position: absolute;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2a2a3a, #1a1a26);
+    border: 2px solid #3a3a4a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    transition: all 0.4s ease;
+    transform: translate(-50%, -50%);
+  }
+  .validator-node.thinking {
+    border-color: #7c5cff;
+    box-shadow: 0 0 16px rgba(124, 92, 255, 0.6);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .validator-node.agreed {
+    border-color: #4ce0c5;
+    background: linear-gradient(135deg, #1a3a35, #0e2a25);
+    box-shadow: 0 0 12px rgba(76, 224, 197, 0.5);
+  }
+  @keyframes pulse {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+    50%      { transform: translate(-50%, -50%) scale(1.12); }
+  }
+  .validator-center {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(124, 92, 255, 0.3), transparent 70%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+  }
+  .validator-stage {
+    color: #e8e8f0;
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    min-height: 24px;
+  }
+  .validator-detail {
+    color: #7777a0;
+    font-size: 12px;
+    min-height: 18px;
+  }
+  .validator-error {
+    margin-top: 24px;
+    padding: 16px;
+    background: rgba(255, 80, 80, 0.1);
+    border: 1px solid rgba(255, 80, 80, 0.4);
+    border-radius: 8px;
+    color: #ffaaaa;
+    font-size: 13px;
+    display: none;
+  }
+  .validator-error.show { display: block; }
+  .validator-actions {
+    margin-top: 16px;
+    display: none;
+    gap: 8px;
+    justify-content: center;
+  }
+  .validator-actions.show { display: flex; }
+</style>
+
+
+<!-- ===== PATCH STEP 3: NEW PAGES (insert before </body>) ===== -->
+
+<!-- Topic picker — host sees this before clicking the real START button -->
+<div class="page" id="topicPage" style="display:none;">
+  <div class="page-inner">
+    <h2 style="margin-top:0;">Choose Match Topic</h2>
+    <p style="color:#9999b0; font-size:14px;">
+      AI validators will generate fresh questions on this topic for your match.
+      Each match is unique — no two games are the same.
+    </p>
+
+    <div class="topic-grid" id="topicGrid">
+      <div class="topic-card" data-topic="genlayer">
+        <div class="topic-icon">🧠</div>
+        <div class="topic-name">GenLayer</div>
+        <div class="topic-desc">Intelligent Contracts, OD, Equivalence Principle</div>
+      </div>
+      <div class="topic-card" data-topic="web3">
+        <div class="topic-icon">🌐</div>
+        <div class="topic-name">Web3</div>
+        <div class="topic-desc">Wallets, smart contracts, EVM, L2s</div>
+      </div>
+      <div class="topic-card" data-topic="consensus">
+        <div class="topic-icon">⚖️</div>
+        <div class="topic-name">Consensus</div>
+        <div class="topic-desc">PoW, PoS, BFT, Optimistic Democracy</div>
+      </div>
+      <div class="topic-card" data-topic="ai">
+        <div class="topic-icon">🤖</div>
+        <div class="topic-name">AI × Chain</div>
+        <div class="topic-desc">LLM oracles, on-chain inference, AI agents</div>
+      </div>
+      <div class="topic-card selected" data-topic="mixed">
+        <div class="topic-icon">🎲</div>
+        <div class="topic-name">Mixed</div>
+        <div class="topic-desc">A blend across all topics</div>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:8px;">
+      <button class="btn-secondary" onclick="backToLobby()">Back</button>
+      <button class="btn-primary" onclick="confirmTopicAndStart()">
+        Generate Questions →
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Validator convening screen — shown to ALL players during generation -->
+<div class="page" id="validatorScreen" style="display:none;">
+  <div class="page-inner">
+    <div class="validator-title">AI Validators Convening</div>
+    <div class="validator-subtitle">
+      Generating your match via Optimistic Democracy on GenLayer
+    </div>
+
+    <div class="validator-ring" id="validatorRing">
+      <div class="validator-center">⚡</div>
+      <!-- 5 validator nodes positioned around the ring (set in JS) -->
+      <div class="validator-node" id="vnode-0">🤖</div>
+      <div class="validator-node" id="vnode-1">🤖</div>
+      <div class="validator-node" id="vnode-2">🤖</div>
+      <div class="validator-node" id="vnode-3">🤖</div>
+      <div class="validator-node" id="vnode-4">🤖</div>
+    </div>
+
+    <div class="validator-stage" id="validatorStage">Connecting to GenLayer…</div>
+    <div class="validator-detail" id="validatorDetail">Establishing client</div>
+
+    <div class="validator-error" id="validatorError"></div>
+    <div class="validator-actions" id="validatorActions">
+      <button class="btn-secondary" onclick="retryGeneration()">Retry</button>
+      <button class="btn-primary" onclick="useFallbackQuestions()">
+        Use Hardcoded Questions
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ===== PATCH STEP 4: JS GLUE (place after multiplayer.js loads) ===== -->
+<script>
+(function () {
+  // Position the 5 validator nodes around the ring on load.
+  const ring = document.getElementById('validatorRing');
+  if (ring) {
+    const radius = 100;
+    for (let i = 0; i < 5; i++) {
+      const node = document.getElementById(`vnode-${i}`);
+      if (!node) continue;
+      const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+      const x = 120 + radius * Math.cos(angle);
+      const y = 120 + radius * Math.sin(angle);
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+    }
+  }
+
+  // Topic selection state
+  let selectedTopic = 'mixed';
+  document.querySelectorAll('.topic-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.topic-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      selectedTopic = card.dataset.topic;
+    });
+  });
+
+  // Stage labels for the validator screen
+  const STAGES = {
+    connecting:           { title: 'Connecting to GenLayer',     detail: 'Establishing client' },
+    summoning_validators: { title: 'Summoning Validators',       detail: 'Selecting LLM-equipped nodes' },
+    validators_thinking:  { title: 'Validators Drafting Questions', detail: '5 LLMs working independently' },
+    consensus_reached:    { title: 'Consensus Reached',          detail: 'Equivalence Principle satisfied' },
+    ready:                { title: 'Match Ready',                detail: 'Launching in 3…' },
+  };
+
+  function setStage(stage) {
+    const s = STAGES[stage];
+    if (!s) return;
+    document.getElementById('validatorStage').textContent = s.title;
+    document.getElementById('validatorDetail').textContent = s.detail;
+
+    // Animate the validator nodes based on stage.
+    const nodes = [0,1,2,3,4].map(i => document.getElementById(`vnode-${i}`));
+    nodes.forEach(n => n && n.classList.remove('thinking', 'agreed'));
+
+    if (stage === 'summoning_validators') {
+      // Light up nodes one by one
+      nodes.forEach((n, i) => setTimeout(() => n && n.classList.add('thinking'), i * 200));
+    } else if (stage === 'validators_thinking') {
+      nodes.forEach(n => n && n.classList.add('thinking'));
+    } else if (stage === 'consensus_reached' || stage === 'ready') {
+      nodes.forEach(n => n && n.classList.add('agreed'));
+    }
+  }
+
+  function showError(msg) {
+    const err = document.getElementById('validatorError');
+    const actions = document.getElementById('validatorActions');
+    err.textContent = msg;
+    err.classList.add('show');
+    actions.classList.add('show');
+  }
+
+  function clearError() {
+    document.getElementById('validatorError').classList.remove('show');
+    document.getElementById('validatorActions').classList.remove('show');
+  }
+
+  // ------------------------------------------------------------------
+  // Page navigation helpers (assumes you have a showPage(id) somewhere;
+  // if not, these direct-show functions work).
+  // ------------------------------------------------------------------
+  function showOnly(id) {
+    document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+    const el = document.getElementById(id);
+    if (el) el.style.display = '';
+  }
+
+  // Called by the "Generate Questions →" button on the topic page.
+  // For SOLO play, calls GL directly. For multiplayer, delegates to MP_API.
+  window.confirmTopicAndStart = async function () {
+    clearError();
+    showOnly('validatorScreen');
+    setStage('connecting');
+
+    const isMultiplayer = window.MP && window.MP.roomId;
+
+    try {
+      if (isMultiplayer) {
+        // Host triggers generation; the validator screen reacts to mp- events.
+        await window.MP_API.hostStartMatch(selectedTopic);
+      } else {
+        // Solo: generate directly.
+        const seed = `solo-${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
+        const questions = await window.GL.generateQuestions(seed, selectedTopic, setStage);
+        // Hand off to game.js. The exact entry point depends on your game.js;
+        // here we assume a global startGameWithQuestions(questions, topic, seed).
+        if (typeof window.startGameWithQuestions === 'function') {
+          window.startGameWithQuestions(questions, selectedTopic, seed);
+        } else {
+          console.warn('[GENCRAFT] startGameWithQuestions not defined; ' +
+                       'wire it up in game.js to consume window.MP.questions or the args.');
+        }
+      }
+    } catch (err) {
+      console.error('Generation error:', err);
+      showError(`Generation failed: ${err.message || err}. ` +
+                `This usually means the testnet is busy or the contract address is wrong.`);
+    }
+  };
+
+  window.backToLobby = function () {
+    showOnly('lobbyPage');  // adjust to your actual lobby page id
+  };
+
+  window.retryGeneration = function () {
+    clearError();
+    confirmTopicAndStart();
+  };
+
+  // Last-resort: bypass the contract and use the original hardcoded question bank.
+  // game.js still has its 100+ questions baked in — call your existing solo/MP entry.
+  window.useFallbackQuestions = function () {
+    clearError();
+    if (typeof window.startGameWithFallback === 'function') {
+      window.startGameWithFallback(selectedTopic);
+    } else {
+      alert('Fallback path not wired up. Add window.startGameWithFallback() in game.js.');
+    }
+  };
+
+  // ------------------------------------------------------------------
+  // Multiplayer event reactions
+  // ------------------------------------------------------------------
+  window.addEventListener('mp-generation-starting', () => {
+    showOnly('validatorScreen');
+    setStage('connecting');
+    clearError();
+  });
+
+  window.addEventListener('mp-generation-progress', (e) => {
+    setStage(e.detail.stage);
+  });
+
+  window.addEventListener('mp-generation-failed', (e) => {
+    showError(`Host's generation failed: ${e.detail.error}. Wait for them to retry.`);
+  });
+
+  window.addEventListener('mp-game-start', (e) => {
+    setStage('ready');
+    // game.js should listen for this same event and launch the round.
+    // The questions live at window.MP.questions and e.detail.questions.
+  });
+})();
+</script>
+
+
+<!-- ===== PATCH STEP 5: HOOK INTO game.js =====
+
+  Open game.js and find your existing solo-start and multiplayer-start
+  entry points. You need to add a small wrapper:
+
+  // 1. AI-generated path (new)
+  window.startGameWithQuestions = function (questions, topic, seed) {
+    // Replace the QUESTIONS array (or whatever your bank is called)
+    // with the AI-generated set, then run your normal start function.
+    QUESTIONS = questions;     // <-- adjust to your variable name
+    currentTopic = topic;
+    currentSeed = seed;
+    startRound();              // <-- your existing start function
+  };
+
+  // 2. Fallback path (uses the original hardcoded bank)
+  window.startGameWithFallback = function (topic) {
+    QUESTIONS = HARDCODED_QUESTIONS;   // your original bank
+    currentTopic = topic;
+    currentSeed = `fallback-${Date.now()}`;
+    startRound();
+  };
+
+  // 3. In your existing multiplayer-start listener for 'mp-game-start',
+  //    swap the question source to event.detail.questions or window.MP.questions.
+
+  // 4. When the match ends and you submit XP, also call:
+  //    if (window.GL) await window.GL.submitResult(playerName, finalXp, currentSeed, currentTopic);
+-->

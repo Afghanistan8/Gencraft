@@ -10,6 +10,160 @@
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <script src="https://cdn.ably.com/lib/ably.min-2.js"></script>
+
+  <!-- AI question generation: topic picker + validator screen styles -->
+  <style>
+    /* Topic picker grid */
+    .gc-topic-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 14px;
+      margin: 24px 0;
+      max-width: 760px;
+      width: 100%;
+    }
+    .gc-topic-card {
+      background: rgba(20, 20, 30, 0.7);
+      border: 2px solid #3a3a4a;
+      border-radius: 12px;
+      padding: 20px 16px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      text-align: center;
+      font-family: var(--mn, 'JetBrains Mono', monospace);
+    }
+    .gc-topic-card:hover {
+      border-color: #7c5cff;
+      transform: translateY(-2px);
+    }
+    .gc-topic-card.selected {
+      border-color: #7c5cff;
+      background: rgba(124, 92, 255, 0.15);
+      box-shadow: 0 0 0 2px rgba(124, 92, 255, 0.3);
+    }
+    .gc-topic-icon {
+      font-size: 32px;
+      margin-bottom: 10px;
+    }
+    .gc-topic-name {
+      font-weight: 700;
+      color: #e8e8f0;
+      margin-bottom: 6px;
+      font-size: 14px;
+      letter-spacing: .04em;
+    }
+    .gc-topic-desc {
+      font-size: 11px;
+      color: #9999b0;
+      line-height: 1.4;
+    }
+
+    /* Validator convening screen */
+    #page-validators {
+      text-align: center;
+      padding: 30px 20px;
+    }
+    .gc-validator-title {
+      font-size: 22px;
+      font-weight: 800;
+      background: linear-gradient(90deg, #7c5cff, #4ce0c5);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+      letter-spacing: .04em;
+    }
+    .gc-validator-subtitle {
+      color: #9999b0;
+      font-size: 13px;
+      margin-bottom: 28px;
+      font-family: var(--mn, 'JetBrains Mono', monospace);
+    }
+    .gc-validator-ring {
+      position: relative;
+      width: 240px;
+      height: 240px;
+      margin: 0 auto 28px;
+    }
+    .gc-validator-node {
+      position: absolute;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #2a2a3a, #1a1a26);
+      border: 2px solid #3a3a4a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      transition: all 0.4s ease;
+      transform: translate(-50%, -50%);
+    }
+    .gc-validator-node.thinking {
+      border-color: #7c5cff;
+      box-shadow: 0 0 16px rgba(124, 92, 255, 0.6);
+      animation: gc-pulse 1.4s ease-in-out infinite;
+    }
+    .gc-validator-node.agreed {
+      border-color: #4ce0c5;
+      background: linear-gradient(135deg, #1a3a35, #0e2a25);
+      box-shadow: 0 0 12px rgba(76, 224, 197, 0.5);
+    }
+    @keyframes gc-pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50%      { transform: translate(-50%, -50%) scale(1.12); }
+    }
+    .gc-validator-center {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(124, 92, 255, 0.3), transparent 70%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 36px;
+    }
+    .gc-validator-stage {
+      color: #e8e8f0;
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 6px;
+      min-height: 22px;
+      font-family: var(--mn, 'JetBrains Mono', monospace);
+      letter-spacing: .03em;
+    }
+    .gc-validator-detail {
+      color: #7777a0;
+      font-size: 11px;
+      min-height: 18px;
+      font-family: var(--mn, 'JetBrains Mono', monospace);
+    }
+    .gc-validator-error {
+      margin: 24px auto 0;
+      max-width: 500px;
+      padding: 14px 16px;
+      background: rgba(255, 80, 80, 0.1);
+      border: 1px solid rgba(255, 80, 80, 0.4);
+      border-radius: 8px;
+      color: #ffaaaa;
+      font-size: 12px;
+      font-family: var(--mn, 'JetBrains Mono', monospace);
+      display: none;
+      line-height: 1.5;
+    }
+    .gc-validator-error.show { display: block; }
+    .gc-validator-actions {
+      margin-top: 16px;
+      display: none;
+      gap: 10px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .gc-validator-actions.show { display: flex; }
+  </style>
 </head>
 <body>
 
@@ -106,8 +260,8 @@
         <span class="tag go">STREAK BONUS</span>
       </div>
       <div class="splash-btns">
-        <button class="btn em" onclick="initSolo()">⛏ SOLO MINE</button>
-        <button class="btn am" onclick="initMulti()">⚔ MULTIPLAYER FORGE</button>
+        <button class="btn em" onclick="window.startGencraftFlow('solo')">⛏ SOLO MINE</button>
+        <button class="btn am" onclick="window.startGencraftFlow('multi')">⚔ MULTIPLAYER FORGE</button>
         <div class="splash-divider"><span>OR</span></div>
         <button class="btn ghost" onclick="showPage('how-to-play')">📖 HOW TO PLAY</button>
         <button class="btn ghost" onclick="showPage('leaderboard')">🏆 LEADERBOARD</button>
@@ -531,11 +685,269 @@
     </div>
   </div>
 
+  <!-- ══════════════════════════════════════
+       PAGE: TOPIC PICKER (host picks topic before AI question gen)
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-topic">
+    <div class="panel" style="max-width:840px;margin:0 auto;padding:28px 24px;text-align:center">
+      <div class="px-title" style="font-size:14px;margin-bottom:6px">CHOOSE MATCH TOPIC</div>
+      <div class="px-sub" style="font-family:var(--mn);font-size:11px;color:#9999b0;line-height:1.6;margin-bottom:8px">
+        AI validators will generate fresh questions on this topic via Optimistic Democracy.<br>
+        Every match is unique — no two games are the same.
+      </div>
+
+      <div class="gc-topic-grid" style="margin-left:auto;margin-right:auto">
+        <div class="gc-topic-card" data-topic="genlayer">
+          <div class="gc-topic-icon">🧠</div>
+          <div class="gc-topic-name">GENLAYER</div>
+          <div class="gc-topic-desc">Intelligent Contracts, OD, Equivalence Principle</div>
+        </div>
+        <div class="gc-topic-card" data-topic="web3">
+          <div class="gc-topic-icon">🌐</div>
+          <div class="gc-topic-name">WEB3</div>
+          <div class="gc-topic-desc">Wallets, smart contracts, EVM, layer 2s</div>
+        </div>
+        <div class="gc-topic-card" data-topic="consensus">
+          <div class="gc-topic-icon">⚖️</div>
+          <div class="gc-topic-name">CONSENSUS</div>
+          <div class="gc-topic-desc">PoW, PoS, BFT, Optimistic Democracy</div>
+        </div>
+        <div class="gc-topic-card" data-topic="ai">
+          <div class="gc-topic-icon">🤖</div>
+          <div class="gc-topic-name">AI × CHAIN</div>
+          <div class="gc-topic-desc">LLM oracles, on-chain inference, AI agents</div>
+        </div>
+        <div class="gc-topic-card selected" data-topic="mixed">
+          <div class="gc-topic-icon">🎲</div>
+          <div class="gc-topic-name">MIXED</div>
+          <div class="gc-topic-desc">A blend across all topics</div>
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:8px">
+        <button class="btn ghost" onclick="showPage('splash')">← BACK</button>
+        <button class="btn em" onclick="window.gcConfirmTopicAndStart()">⛏ GENERATE QUESTIONS</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       PAGE: VALIDATORS CONVENING (AI generation in progress)
+  ═══════════════════════════════════════ -->
+  <div class="page" id="page-validators">
+    <div class="panel" style="max-width:560px;margin:0 auto;padding:36px 24px">
+      <div class="gc-validator-title">AI VALIDATORS CONVENING</div>
+      <div class="gc-validator-subtitle">
+        Generating your match via Optimistic Democracy on GenLayer
+      </div>
+
+      <div class="gc-validator-ring" id="gc-validator-ring">
+        <div class="gc-validator-center">⚡</div>
+        <div class="gc-validator-node" id="gc-vnode-0">🤖</div>
+        <div class="gc-validator-node" id="gc-vnode-1">🤖</div>
+        <div class="gc-validator-node" id="gc-vnode-2">🤖</div>
+        <div class="gc-validator-node" id="gc-vnode-3">🤖</div>
+        <div class="gc-validator-node" id="gc-vnode-4">🤖</div>
+      </div>
+
+      <div class="gc-validator-stage" id="gc-validator-stage">Connecting to GenLayer…</div>
+      <div class="gc-validator-detail" id="gc-validator-detail">Establishing client</div>
+
+      <div class="gc-validator-error" id="gc-validator-error"></div>
+      <div class="gc-validator-actions" id="gc-validator-actions">
+        <button class="btn em" onclick="window.gcRetryGeneration()">↻ RETRY</button>
+        <button class="btn ghost" onclick="window.gcUseFallbackQuestions()">USE HARDCODED</button>
+        <button class="btn ghost" onclick="showPage('splash')">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       AI QUESTION GENERATION GLUE
+  ═══════════════════════════════════════ -->
+  <script>
+  (function () {
+    // State for the current AI-generation flow
+    let gcSelectedTopic = 'mixed';
+    let gcMode = 'solo'; // 'solo' or 'multi'
+
+    // Stage labels for the validator screen
+    const GC_STAGES = {
+      connecting:           { title: 'CONNECTING TO GENLAYER',     detail: 'Establishing client' },
+      summoning_validators: { title: 'SUMMONING VALIDATORS',       detail: 'Selecting LLM-equipped nodes' },
+      validators_thinking:  { title: 'VALIDATORS DRAFTING QUESTIONS', detail: 'LLMs working independently' },
+      consensus_reached:    { title: 'CONSENSUS REACHED',          detail: 'Equivalence Principle satisfied' },
+      ready:                { title: 'MATCH READY',                detail: 'Launching now…' },
+    };
+
+    function gcPositionNodes() {
+      const ring = document.getElementById('gc-validator-ring');
+      if (!ring) return;
+      const radius = 100;
+      for (let i = 0; i < 5; i++) {
+        const node = document.getElementById('gc-vnode-' + i);
+        if (!node) continue;
+        const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+        const x = 120 + radius * Math.cos(angle);
+        const y = 120 + radius * Math.sin(angle);
+        node.style.left = x + 'px';
+        node.style.top  = y + 'px';
+      }
+    }
+
+    function gcSetStage(stage) {
+      const s = GC_STAGES[stage];
+      if (!s) return;
+      const stageEl  = document.getElementById('gc-validator-stage');
+      const detailEl = document.getElementById('gc-validator-detail');
+      if (stageEl)  stageEl.textContent  = s.title;
+      if (detailEl) detailEl.textContent = s.detail;
+
+      const nodes = [0,1,2,3,4].map(i => document.getElementById('gc-vnode-' + i));
+      nodes.forEach(n => n && n.classList.remove('thinking', 'agreed'));
+
+      if (stage === 'summoning_validators') {
+        nodes.forEach((n, i) => setTimeout(() => n && n.classList.add('thinking'), i * 200));
+      } else if (stage === 'validators_thinking') {
+        nodes.forEach(n => n && n.classList.add('thinking'));
+      } else if (stage === 'consensus_reached' || stage === 'ready') {
+        nodes.forEach(n => n && n.classList.add('agreed'));
+      }
+    }
+
+    function gcShowError(msg) {
+      const err = document.getElementById('gc-validator-error');
+      const actions = document.getElementById('gc-validator-actions');
+      if (err)     { err.textContent = msg; err.classList.add('show'); }
+      if (actions) actions.classList.add('show');
+    }
+
+    function gcClearError() {
+      const err = document.getElementById('gc-validator-error');
+      const actions = document.getElementById('gc-validator-actions');
+      if (err)     err.classList.remove('show');
+      if (actions) actions.classList.remove('show');
+    }
+
+    // Topic card click handlers
+    document.addEventListener('click', function(e) {
+      const card = e.target.closest('.gc-topic-card');
+      if (!card) return;
+      document.querySelectorAll('.gc-topic-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+      gcSelectedTopic = card.dataset.topic || 'mixed';
+    });
+
+    // Position validator nodes once the DOM is ready
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', gcPositionNodes);
+    } else {
+      gcPositionNodes();
+    }
+
+    // ─── Public entry points called from buttons ────────────────────
+
+    // Called by SOLO MINE / MULTIPLAYER FORGE buttons on the splash page.
+    // Routes the user through the topic picker first.
+    window.startGencraftFlow = function (mode) {
+      gcMode = mode === 'multi' ? 'multi' : 'solo';
+      // Reset topic to default each time
+      gcSelectedTopic = 'mixed';
+      document.querySelectorAll('.gc-topic-card').forEach(c => {
+        c.classList.toggle('selected', c.dataset.topic === 'mixed');
+      });
+      showPage('topic');
+    };
+
+    // Called by the GENERATE QUESTIONS button on the topic page.
+    window.gcConfirmTopicAndStart = async function () {
+      gcClearError();
+      showPage('validators');
+      gcSetStage('connecting');
+
+      if (!window.GL) {
+        gcShowError('GenLayer client not loaded yet. Please wait a few seconds and click Retry.');
+        return;
+      }
+
+      try {
+        if (gcMode === 'multi') {
+          // Multiplayer: this needs to first put the host in the multi setup flow.
+          // For now, treat it the same as solo (single-player AI questions).
+          // TODO: integrate with initMulti / room creation.
+          if (typeof window.MP_API !== 'undefined' && window.MP && window.MP.isHost) {
+            await window.MP_API.hostStartMatch(gcSelectedTopic);
+            // Multiplayer event handlers (below) will drive the rest.
+            return;
+          }
+          // Fall through to solo if MP isn't initialized (host hasn't created a room yet)
+        }
+
+        // SOLO path
+        const seed = 'solo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+        const questions = await window.GL.generateQuestions(seed, gcSelectedTopic, gcSetStage);
+        gcSetStage('ready');
+
+        // Hand off to game.js
+        if (typeof window.startGameWithQuestions === 'function') {
+          window.startGameWithQuestions(questions, gcSelectedTopic, seed);
+        } else {
+          gcShowError('Internal: window.startGameWithQuestions is not defined in game.js. Add the wrapper as instructed.');
+        }
+      } catch (err) {
+        console.error('[GENCRAFT] Generation error:', err);
+        gcShowError('Generation failed: ' + (err.message || err) + '. The testnet may be busy, or the contract address may be wrong. Try again, or use hardcoded questions.');
+      }
+    };
+
+    window.gcRetryGeneration = function () {
+      gcClearError();
+      window.gcConfirmTopicAndStart();
+    };
+
+    window.gcUseFallbackQuestions = function () {
+      gcClearError();
+      if (typeof window.startGameWithFallback === 'function') {
+        window.startGameWithFallback(gcSelectedTopic);
+      } else if (typeof window.initSolo === 'function' && gcMode === 'solo') {
+        // Fall back to your original solo flow if no wrapper is wired up.
+        window.initSolo();
+      } else if (typeof window.initMulti === 'function' && gcMode === 'multi') {
+        window.initMulti();
+      } else {
+        gcShowError('No fallback path is wired up. Check that game.js is loaded.');
+      }
+    };
+
+    // ─── Multiplayer event reactions ─────────────────────────────────
+
+    window.addEventListener('mp-generation-starting', function () {
+      showPage('validators');
+      gcSetStage('connecting');
+      gcClearError();
+    });
+
+    window.addEventListener('mp-generation-progress', function (e) {
+      gcSetStage(e.detail.stage);
+    });
+
+    window.addEventListener('mp-generation-failed', function (e) {
+      gcShowError("Host's generation failed: " + e.detail.error + '. Wait for them to retry.');
+    });
+
+    window.addEventListener('mp-game-start', function (e) {
+      gcSetStage('ready');
+      // game.js should also listen for this and launch the game using
+      // e.detail.questions (or window.MP.questions).
+    });
+  })();
+  </script>
+
 </div><!-- end #app -->
 
 <!-- GenLayer status bar -->
 <div id="gl-status" style="display:none;position:fixed;bottom:0;left:0;right:0;padding:8px 16px;font-family:var(--mn);font-size:11px;background:var(--bg2);border-top:1px solid var(--bdr2);text-align:center;z-index:9998;"></div>
-<script src="genlayer.js"></script>
+<script type="module" src="genlayer.js"></script>
 <script src="game.js"></script>
 <script src="multiplayer.js"></script>
 </body>
